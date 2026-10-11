@@ -15,6 +15,10 @@
 //   - Read and write paths, and the AXI4 and AXI4-Lite buses, are arbitrated
 //     independently. Fixed priority: s0 first.
 //   - AXI IDs are passed through unchanged (masters use distinct IDs).
+//   - FAST_READ = 1 (the arbiter of CPU_CACHE): while no AXI4 read is
+//     granted, a request goes through in the cycle it is raised (the grant
+//     is made from the ARVALIDs, s0 first) instead of one cycle later. Every
+//     line fill of the L1 caches used to pay that cycle (BENCH.md 22).
 //---------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -25,7 +29,8 @@ module BUS_ARB
         parameter int AXI4_ADDR_WIDTH = 40,
         parameter int AXI4_DATA_WIDTH = 64,
         parameter int AXIL_ADDR_WIDTH = 40,
-        parameter int AXIL_DATA_WIDTH = 64
+        parameter int AXIL_DATA_WIDTH = 64,
+        parameter int FAST_READ       = 0
     )
     (
         input  logic clk,
@@ -287,8 +292,12 @@ module BUS_ARB
     logic xlw_s0, xlw_s1, xlr_s0, xlr_s1;
     assign x4w_s0 = x4w_act & ~x4w_g1;
     assign x4w_s1 = x4w_act &  x4w_g1;
-    assign x4r_s0 = x4r_act & ~x4r_g1;
-    assign x4r_s1 = x4r_act &  x4r_g1;
+    // FAST_READ : with no read granted, the one that asks now has it
+    logic x4r_now0, x4r_now1;
+    assign x4r_now0 = (FAST_READ != 0) & ~x4r_act &  s0_axi4_arvalid;
+    assign x4r_now1 = (FAST_READ != 0) & ~x4r_act & ~s0_axi4_arvalid & s1_axi4_arvalid;
+    assign x4r_s0 = (x4r_act & ~x4r_g1) | x4r_now0;
+    assign x4r_s1 = (x4r_act &  x4r_g1) | x4r_now1;
     assign xlw_s0 = xlw_act & ~xlw_g1;
     assign xlw_s1 = xlw_act &  xlw_g1;
     assign xlr_s0 = xlr_act & ~xlr_g1;
@@ -327,15 +336,17 @@ module BUS_ARB
     //=================================================================
     // AXI4 read path
     //=================================================================
-    assign m_axi4_arid     = x4r_g1 ? s1_axi4_arid    : s0_axi4_arid;
-    assign m_axi4_araddr   = x4r_g1 ? s1_axi4_araddr  : s0_axi4_araddr;
-    assign m_axi4_arlen    = x4r_g1 ? s1_axi4_arlen   : s0_axi4_arlen;
-    assign m_axi4_arsize   = x4r_g1 ? s1_axi4_arsize  : s0_axi4_arsize;
-    assign m_axi4_arburst  = x4r_g1 ? s1_axi4_arburst : s0_axi4_arburst;
-    assign m_axi4_arlock   = x4r_g1 ? s1_axi4_arlock  : s0_axi4_arlock;
-    assign m_axi4_arcache  = x4r_g1 ? s1_axi4_arcache : s0_axi4_arcache;
-    assign m_axi4_arprot   = x4r_g1 ? s1_axi4_arprot  : s0_axi4_arprot;
-    assign m_axi4_arqos    = x4r_g1 ? s1_axi4_arqos   : s0_axi4_arqos;
+    logic x4r_sel1;                 // the address of s1 goes out
+    assign x4r_sel1 = (FAST_READ != 0) ? x4r_s1 : x4r_g1;
+    assign m_axi4_arid     = x4r_sel1 ? s1_axi4_arid    : s0_axi4_arid;
+    assign m_axi4_araddr   = x4r_sel1 ? s1_axi4_araddr  : s0_axi4_araddr;
+    assign m_axi4_arlen    = x4r_sel1 ? s1_axi4_arlen   : s0_axi4_arlen;
+    assign m_axi4_arsize   = x4r_sel1 ? s1_axi4_arsize  : s0_axi4_arsize;
+    assign m_axi4_arburst  = x4r_sel1 ? s1_axi4_arburst : s0_axi4_arburst;
+    assign m_axi4_arlock   = x4r_sel1 ? s1_axi4_arlock  : s0_axi4_arlock;
+    assign m_axi4_arcache  = x4r_sel1 ? s1_axi4_arcache : s0_axi4_arcache;
+    assign m_axi4_arprot   = x4r_sel1 ? s1_axi4_arprot  : s0_axi4_arprot;
+    assign m_axi4_arqos    = x4r_sel1 ? s1_axi4_arqos   : s0_axi4_arqos;
     assign m_axi4_arvalid  = (x4r_s0 & s0_axi4_arvalid) | (x4r_s1 & s1_axi4_arvalid);
     assign m_axi4_rready   = (x4r_s0 & s0_axi4_rready)  | (x4r_s1 & s1_axi4_rready);
 

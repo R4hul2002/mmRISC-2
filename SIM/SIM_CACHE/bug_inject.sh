@@ -72,6 +72,8 @@ MUTATIONS=(
 "52#CPU/CPU_CACHE/ICACHE/ICACHE.sv#s/i_resp_data  <= pf_buf\[fill_beat\]/i_resp_data  <= pf_buf[0]/#10#20#I\$ (M3): a miss served from the buffer gets its first word"
 "53#CPU/CPU_CACHE/ICACHE/ICACHE.sv#s/({1'b0, fill_beat} < pf_cnt)/({1'b0, fill_beat} <= pf_cnt)/#10#20#I\$ (M3): the copy from the buffer runs ahead of the beats"
 "54#CPU/CPU_CACHE/ICACHE/ICACHE.sv#s/assign m_axi4_rready  = (state == S_FILL) || pf_busy;/assign m_axi4_rready  = (state == S_FILL);/#10#20#I\$ (M3): the beats of a prefetch are not taken"
+"55#BUS/BUS_ARB/BUS_ARB.sv#s/assign x4r_now1 = (FAST_READ != 0) \& ~x4r_act \& ~s0_axi4_arvalid \& s1_axi4_arvalid;/assign x4r_now1 = (FAST_READ != 0) \& ~x4r_act \& s1_axi4_arvalid;/#10#20#bus (FAST_READ): the I$ is let through with the D$ when both ask at once"
+"56#BUS/BUS_ARB/BUS_ARB.sv#s/assign x4r_sel1 = (FAST_READ != 0) ? x4r_s1 : x4r_g1;/assign x4r_sel1 = x4r_g1;/#10#20#bus (FAST_READ): the address of the last grant goes out with a new one"
 )
 
 # Not listed, equivalent to the design:

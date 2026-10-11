@@ -246,7 +246,7 @@ without the L2), SIM_BIOS `make linux-perf` (`perf stat -e LLC-loads,LLC-load-mi
 |---|---|---|
 | Catching DMA writes | The SD card's DMA comes as the D$'s write-through, passes through the L2 to memory as partial writes, and waits for memory's answer each time. For a stream that writes whole lines, allocating the line, or answering early (a write buffer), should reduce the D$ wait of `sdread` / `ext4read` (30 to 39 %) (added 2026-10-07, section 15 of `BENCH.md`) | Medium |
 | Next-line prefetch | Hides the misses of streaming reads (`md5sum`, the data of `ext4read`). Read the next line too on an L2 miss. It uses memory bandwidth, so whether it helps must be measured | Small to medium |
-| Hit under miss | An I$ fill does not wait for a D$ miss | Medium |
+| Hit under miss | An I$ fill does not wait for a D$ miss. Measured on 2026-10-12 (the Linux boot with the board's memory latency, `LitexSystem/docs/BENCH.md` 22): the fills that wait while the L2 waits for memory cost 0.26 % of the cycles, so not built | Medium |
 | 128 bits on the memory side | Matches LiteDRAM's width and removes `AXIUpConverter` (4 beats a line). Needs a change in `core.py` | Medium |
 | Overlapping L1 write-backs | Accept the L1's 2 write-back buffers side by side in the L2 | Medium |
 

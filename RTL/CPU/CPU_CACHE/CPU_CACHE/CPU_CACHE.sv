@@ -558,7 +558,8 @@ module CPU_CACHE
             .AXI4_ADDR_WIDTH (PADDR_WIDTH),
             .AXI4_DATA_WIDTH (64),
             .AXIL_ADDR_WIDTH (PADDR_WIDTH),
-            .AXIL_DATA_WIDTH (64)
+            .AXIL_DATA_WIDTH (64),
+            .FAST_READ       (1)
         )
     u_arb
         (

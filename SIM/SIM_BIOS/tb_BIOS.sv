@@ -55,7 +55,9 @@ module tb_BIOS
         // at 0x1000_0000, below MEM_BASE.
         parameter logic [39:0] RESET_ADDR = 40'h00_1000_0000,
         // L2 cache in bytes (-GL2_SIZE=0 : without it), as in the SoC
-        parameter int          L2_SIZE    = 256 * 1024
+        parameter int          L2_SIZE    = 256 * 1024,
+        // the I$'s next-line prefetch (-GIC_PREFETCH=1), off as in the SoC
+        parameter int          IC_PREFETCH = 0
     );
 
     localparam int          SOC_ADDR_WIDTH = 40;
@@ -132,6 +134,7 @@ module tb_BIOS
             // every 100 cycles, the 500 kHz of timebase-frequency
             .CLINT_TICK_DIV  (100),
             .L2_SIZE         (L2_SIZE),
+            .IC_PREFETCH     (IC_PREFETCH),
             .USE_BFM         (0)
         )
     u_cpu_top
@@ -401,6 +404,10 @@ module tb_BIOS
         if (!$value$plusargs("maxcycles=%d", max_cycles)) max_cycles = 3000000;
         if (!$value$plusargs("pcmon=%d", pcmon)) pcmon = 0;
         if (!$value$plusargs("utrace=%d", utrace)) utrace = 0;
+        // the DDR3 of the board: cycles before the first beat of a read and
+        // before a write's response, on top of the model (0: answers at once)
+        if (!$value$plusargs("rlat=%d", u_mem.r_lat)) u_mem.r_lat = 0;
+        if (!$value$plusargs("blat=%d", u_mem.b_lat)) u_mem.b_lat = 0;
         in_user = 1'b0;
         n_user  = 0;
         linux_mode = $test$plusargs("linux");
@@ -439,6 +446,13 @@ module tb_BIOS
     longint  fs_fills [2], fs_next [2], fs_prev [2], fs_gap [2][FS_GAPS];
     longint  fs_ife, fs_ife_u, fs_cyc_u, fs_dw, fs_dw_u;
     longint  fs_pf, fs_pf_hit, fs_fe, fs_wfi;
+    // a fill that waits for the bus (arvalid without arready): [c][0] the
+    // L2 waits for memory with no beat of its fill yet (a second read
+    // could be served then), [c][1] the other cache's read holds the bus
+    // otherwise (its beats are on their way), [c][2] neither (the cycle of
+    // the arbiter's grant, the L2 taking a write); and of those, the cycles
+    // it costs (front end empty / MA waiting)
+    longint  bw [2][3], bw_cost [2][3];
     // policies of a one-line prefetch buffer, played against the demand
     // fills of the I$ (meaningful with the prefetch switched off):
     //   A : the next line after every miss
@@ -453,6 +467,7 @@ module tb_BIOS
             for (int g = 0; g < FS_GAPS; g++) fs_gap[c][g] = 0;
             for (int k = 0; k < FS_RECENT; k++) begin fs_rec[c][k].line = -10; fs_rec[c][k].cyc = 0; end
         end
+        for (int c = 0; c < 2; c++) for (int k = 0; k < 3; k++) begin bw[c][k] = 0; bw_cost[c][k] = 0; end
         fs_ife = 0; fs_ife_u = 0; fs_cyc_u = 0; fs_dw = 0; fs_dw_u = 0; fs_pf = 0; fs_pf_hit = 0; fs_fe = 0; fs_wfi = 0;
         pa_line = -10; pb_line = -10; pa_iss = 0; pa_use = 0; pb_iss = 0; pb_use = 0; last_ic = -10;
     end
@@ -509,6 +524,21 @@ module tb_BIOS
                 if (in_user) fs_dw_u++;
             end
             if (in_user) fs_cyc_u++;
+            begin
+                bit l2mem, w0, w1, oth0, oth1;
+                int k0, k1;
+                l2mem = (int'(u_cpu_top.g_l2.u_cpu_l2.st) == 6) && (u_cpu_top.g_l2.u_cpu_l2.wcnt == 3'd0) &&
+                        !u_cpu_top.g_l2.u_cpu_l2.m_axi4_rvalid;
+                w0 = u_cpu_top.u_cpu_cache.ic_axi4_arvalid && !u_cpu_top.u_cpu_cache.ic_axi4_arready;
+                w1 = u_cpu_top.u_cpu_cache.dc_axi4_arvalid && !u_cpu_top.u_cpu_cache.dc_axi4_arready;
+                // the arbiter of CPU_CACHE: s0 the D$, s1 the I$
+                oth0 = u_cpu_top.u_cpu_cache.u_arb.x4r_act && !u_cpu_top.u_cpu_cache.u_arb.x4r_g1;
+                oth1 = u_cpu_top.u_cpu_cache.u_arb.x4r_act &&  u_cpu_top.u_cpu_cache.u_arb.x4r_g1;
+                k0 = l2mem ? 0 : oth0 ? 1 : 2;
+                k1 = l2mem ? 0 : oth1 ? 1 : 2;
+                if (w0) begin bw[0][k0]++; if (!`CORE.fq_valid) bw_cost[0][k0]++; end
+                if (w1) begin bw[1][k1]++; if (`CORE.stall_ma)  bw_cost[1][k1]++; end
+            end
         end
     end
     task automatic fs_report;
@@ -533,6 +563,9 @@ module tb_BIOS
                  fs_ife, 100.0 * real'(fs_ife) / real'(cycle_count), fs_ife_u);
         $display("   MA waits while the D$ handles a miss: %0d (%0.1f%%), in user mode %0d",
                  fs_dw, 100.0 * real'(fs_dw) / real'(cycle_count), fs_dw_u);
+        for (int c = 0; c < 2; c++)
+            $display("   %s fill waits for the bus: the L2 waits for memory %0d (costing %0d), the other cache's beats %0d (costing %0d), neither %0d (costing %0d)",
+                     cn[c], bw[c][0], bw_cost[c][0], bw[c][1], bw_cost[c][1], bw[c][2], bw_cost[c][2]);
     endtask
 
     initial begin

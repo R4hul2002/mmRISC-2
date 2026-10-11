@@ -26,6 +26,10 @@
 //  w_hold = 1 does the same to WREADY:
 //  a write whose address was taken waits for its data.
 //
+//  r_lat / b_lat (cycles, 0 by default) add a fixed delay before the first
+//  beat of every read and before every write response: a memory that takes
+//  as long as the DDR3 behind LiteDRAM on the board (SIM_BIOS +rlat / +blat).
+//
 //  Protocol checks (counted in protocol_err):
 //    - a burst must not cross a 4KB address boundary
 //    - WLAST must be asserted on, and only on, the final write beat
@@ -110,8 +114,12 @@ module AXI4_SLAVE_MEM
     logic aw_hold;          // 1 = no write address is accepted
     logic w_hold;           // 1 = no write data is accepted
     logic r_hold;           // 1 = the next read beat waits
+    int   r_lat;            // cycles from AR to the first beat, on top
+    int   b_lat;            // cycles from the last W to B, on top
 
     initial begin
+        r_lat    = 0;
+        b_lat    = 0;
         stall_en = 1'b0;
         aw_hold  = 1'b0;
         w_hold   = 1'b0;
@@ -219,6 +227,7 @@ module AXI4_SLAVE_MEM
     logic [7:0]          wlen_r;
     logic [8:0]          wbeat;
     logic [1:0]          wdly;
+    int                  wlat;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -234,6 +243,7 @@ module AXI4_SLAVE_MEM
             wlen_r  <= 8'd0;
             wbeat   <= 9'd0;
             wdly    <= 2'd0;
+            wlat    <= 0;
             protocol_err_w <= 0;
         end
         else begin
@@ -288,6 +298,7 @@ module AXI4_SLAVE_MEM
                             bid    <= wid_r;
                             bresp  <= RESP_OKAY;
                             wdly   <= b_dly_nx;
+                            wlat   <= b_lat;
                             wstate <= W_BDLY;
                         end
                         else begin
@@ -300,7 +311,9 @@ module AXI4_SLAVE_MEM
                 end
 
                 W_BDLY: begin
-                    if (wdly == 2'd0) begin
+                    if (wlat != 0) begin
+                        wlat <= wlat - 1;
+                    end else if (wdly == 2'd0) begin
                         bvalid <= 1'b1;
                         wstate <= W_RESP;
                     end
@@ -335,6 +348,7 @@ module AXI4_SLAVE_MEM
     logic [8:0]          rbeat;     // number of the beat being presented
     logic [7:0]          rlen_r;
     logic [1:0]          rdly;
+    int                  rlat;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -350,6 +364,7 @@ module AXI4_SLAVE_MEM
             rbeat   <= 9'd0;
             rlen_r  <= 8'd0;
             rdly    <= 2'd0;
+            rlat    <= 0;
             protocol_err_r <= 0;
         end
         else begin
@@ -374,6 +389,7 @@ module AXI4_SLAVE_MEM
                         rbeat   <= 9'd0;
                         rlen_r  <= arlen;
                         rdly    <= r_dly_nx;
+                        rlat    <= r_lat;
                         rstate  <= R_DLY;
                     end
                     else begin
@@ -385,6 +401,8 @@ module AXI4_SLAVE_MEM
                 R_DLY: begin
                     if (r_hold) begin
                         // held by the test bench
+                    end else if (rlat != 0) begin
+                        rlat <= rlat - 1;
                     end else if (rdly == 2'd0) begin
                         rdata  <= mem[idx_of(raddr_r)];
                         rlast  <= (rbeat == {1'b0, rlen_r});

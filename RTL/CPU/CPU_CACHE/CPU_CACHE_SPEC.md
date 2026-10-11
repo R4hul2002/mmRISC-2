@@ -482,6 +482,12 @@ For the memory waits (`CPU_CORE_SPEC.md` decision 71) it also gives: `ev_dc_miss
 one / two or more line fills of the I$ and D$ outstanding (from `arvalid` to the last beat). `BUS_ARB` keeps a
 read until its last beat, so two fills are never under way together; a second one waits with `arvalid` up.
 
+**The grant in the cycle of the request (2026-10-12).** `BUS_ARB` of `CPU_CACHE` has `FAST_READ = 1`: while no
+read is granted, the cache that raises `arvalid` (the D$ first) has the bus in that cycle, instead of one
+cycle later from the grant flip-flop; the flip-flop then holds the grant to the last beat. Every line fill
+paid that cycle before (−2.7 % CPI in the Linux boot with the board's memory latency, `BENCH.md` 22). A second
+read in the L2 (hit under miss) was measured to be worth 0.26 % and was not built (same section).
+
 ### 5.8 Mapping for the CPU core (reference)
 
 The CPU core's signal names are to map as follows: `if_req_*` → `i_req_*`, `ls_req_*` → `d_req_*`, and
@@ -918,11 +924,11 @@ AXI4 slave model disabled and the default configuration (64 sets × 4 ways × 64
 | Pattern | Accesses | Steady cycles / access |
 |---|---|---|
 | Consecutive I$ hits | 32 fetches | **1.00** |
-| Consecutive I$ misses (one line at a time) | 8 lines | **13.0** |
+| Consecutive I$ misses (one line at a time) | 8 lines | **11.0** (13.0 before `FAST_READ`, 5.7) |
 | Consecutive D$ load hits | 32 loads | **1.00** |
 | Consecutive D$ store hits | 32 stores | **1.00** |
-| Consecutive D$ load misses (fill only) | 8 lines | **12.0** |
-| Consecutive D$ store misses (fill + write-allocate) | 8 lines | **10.6** (12.0 before 2026-10-10; the fills, one at a time, are the limit) |
+| Consecutive D$ load misses (fill only) | 8 lines | **11.0** (12.0 before `FAST_READ`) |
+| Consecutive D$ store misses (fill + write-allocate) | 8 lines | **9.7** (12.0 before 2026-10-10, 10.6 before `FAST_READ`; the fills, one at a time, are the limit) |
 | Consecutive D$ misses (dirty eviction = write-back + fill) | 8 lines | **12.7** (22.0 before 2026-10-10) |
 
 - Hits are **one access every cycle** for both the I$ and the D$, loads and stores alike; array reads and

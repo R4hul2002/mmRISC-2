@@ -75,6 +75,7 @@ module CPU_TOP
         parameter int          DC_NUM_MSHR    = 2,
         parameter int          DC_NUM_WB      = 2,
         parameter int          CACHE_REPLACE_RANDOM = 0,
+        parameter int          IC_PREFETCH    = 0,      // next-line prefetch of the I$
         parameter logic [3:0]  CACHE_AXI4_ID_IFILL  = 4'd2,
         parameter logic [3:0]  CACHE_AXI4_ID_DFILL  = 4'd3,
         parameter logic [3:0]  CACHE_AXI4_ID_DWB    = 4'd4,
@@ -851,6 +852,7 @@ module CPU_TOP
             .NUM_MSHR       (DC_NUM_MSHR),
             .NUM_WB         (DC_NUM_WB),
             .REPLACE_RANDOM (CACHE_REPLACE_RANDOM),
+            .IC_PREFETCH    (IC_PREFETCH),
             .AXI4_ID_WIDTH  (AXI4_ID_WIDTH),
             .AXI4_ID_IFILL  (CACHE_AXI4_ID_IFILL),
             .AXI4_ID_DFILL  (CACHE_AXI4_ID_DFILL),

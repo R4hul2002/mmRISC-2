@@ -1163,6 +1163,8 @@
         //   (c) a fence.i drops the buffer: the line changed in memory in
         //       between is fetched again (with the new data)
         //   (d) the same with the fence.i while the prefetch is on the bus
+        //   (e) a miss of a line whose prefetch was dropped while on the bus
+        //   (f) a miss in the middle of the prefetched line
         if (from_sec <= 20 && 20 <= to_sec) begin
             int lw, pw, base, pf0, hit0;
             e0   = n_error;
@@ -1247,6 +1249,24 @@
                         i_drain();
                     end
                 join
+            end
+            // (f) a jump into the middle of the prefetched line: the word
+            //     asked for, not the first of the buffer, both with the
+            //     buffer full and with its beats still on their way
+            i_flush_all();
+            pf0 = n_ic_pf; hit0 = n_ic_pf_hit;
+            i_push("(f) line D", a_mem(base + 3 * pw + 12 * lw));
+            i_drain();
+            repeat (40) @(posedge clk);
+            i_push("(f) the last word of line D+1, the buffer full", a_mem(base + 3 * pw + 13 * lw + lw - 1));
+            i_push("(f) the middle word of line D+1", a_mem(base + 3 * pw + 13 * lw + lw / 2));
+            i_drain();
+            if (IC_PREFETCH != 0) begin
+                // D+1 asked for D+2: a miss in its middle while it arrives
+                while (!(u_cache.u_icache.pf_busy && (u_cache.u_icache.pf_cnt != 0))) @(posedge clk);
+                i_push("(f) the last word of line D+2, the buffer arriving", a_mem(base + 3 * pw + 14 * lw + lw - 1));
+                i_drain();
+                check("(f) both served from the prefetch buffer", n_ic_pf_hit - hit0 == 2);
             end
             if (n_error == e0) ok("next-line prefetch: runs, page limit, fence.i");
         end

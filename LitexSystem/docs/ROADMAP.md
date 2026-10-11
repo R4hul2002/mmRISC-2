@@ -97,6 +97,9 @@ kernels, which load ahead); (4) **the bus takes one read at a time** (the arbite
 until its last beat, the L2 takes one transaction at a time): two misses at once are rare now, but a
 prefetch (M2 / M3) would occupy the bus, and a demand miss behind it waits for the whole prefetch. Before
 M3, or if M2 shows that, the read side of the bus needs to take a second read (or let a demand miss go first).
+**Measured (2026-10-12, `BENCH.md` 22)**: a second read in the L2 could take 0.26 % of the cycles and was not
+built; the arbiter's grant in the cycle of the request (`FAST_READ`) took 2.7 % of the Linux boot instead. What
+the prefetch needs is a demand miss that can take the channel from it.
 
 **Considered only (probably not done)**: issuing an FLD and an FP operation in the same cycle (dual issue
 of memory and floating point). The FIR would go 1.53 → about 1.0 and the matrix multiply kernel 1.7 →

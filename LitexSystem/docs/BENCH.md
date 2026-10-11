@@ -1009,3 +1009,55 @@ once per group of events and takes the CPI from runs 1 to 4, and event `rb` (all
 two of them. For `awk` the two now disagree (run 2: 6.9 %, run 7: 5.5 %; they agreed within 0.1 before), and
 the other columns of run 2 are up with it (back end 22.0 → 24.8 %); `gunzip`'s run 2 shows the same (7.2 against
 5.9 %). Which of the kernel's activities hits a run is not seen by the counters of the load.
+
+## 22. The read side of the bus (2026-10-12, simulation)
+
+Item (4) of the findings of section 18 and of `ROADMAP.md`: the bus takes one read at a time, and the
+prefetch of section 21 lost on the board for that reason. Before building a second read into the L2
+(hit under miss), what it could gain was measured.
+
+**First the simulation was made to see the board's memory.** SIM_BIOS's memory answered at once, which is
+why the prefetch looked like a gain there (section 21) and was a loss on the board (21.1). The memory model
+now takes `+rlat` cycles before the first beat of a read and `+blat` before a write's answer; from the board
+(an I$ miss without the L2 took 31 to 33 cycles against 12 to 13 with the ideal memory, section 15) they are
+set to 20 and 10. With that, the Linux boot (CPI outside WFI) shows the board's verdict on the prefetch:
+
+| | Prefetch off | Prefetch on |
+|---|---|---|
+| Ideal memory (section 21) | 1.842 | 1.822 (−1.1 %) |
+| `+rlat=20 +blat=10` | 1.957 | 1.981 (**+1.2 %**, as on the board) |
+
+**What a second read could take** (prefetch off, `+fillstat`, 270.8 M cycles outside WFI): the cycles a fill of
+the I$ or the D$ waits for the bus (`arvalid` without `arready`) and the core waits with it (front end empty /
+MA waiting), by what is on the bus then:
+
+| While | I$ | D$ | Of the cycles |
+|---|---|---|---|
+| (A) the L2 waits for memory, no beat of its fill yet | 0.14 M | 0.56 M | 0.26 % |
+| (B) the other cache's beats are on their way | 0.32 M | 1.56 M | 0.69 % |
+| (C) neither | 2.51 M | 2.33 M | **1.8 %** |
+
+- A second read in the L2 (hit under miss) can only take (A): the channel from the L2 to the L1s carries one
+  burst at a time, so (B) stays. **0.26 % is not worth reworking the L2**, and it is not dropped for lack of a
+  better target.
+- (C) was 1.6 cycles of every fill, and most of it the arbiter of `CPU_CACHE` itself: its grant is a flip-flop,
+  so every read reached the L2 one cycle after it was raised.
+- With the prefetch on, its cost is also not (A): the waits of the I$ behind its own prefetches grow by 2.6 M
+  cycles, almost all of them while the prefetch's beats come from an L2 hit. Only a demand miss that can take
+  the channel from a prefetch would help there.
+
+**Built instead: the grant in the cycle of the request** (`FAST_READ` of `BUS_ARB`, set in `CPU_CACHE`). With
+no read granted, the one that asks goes through in the same cycle (made from the `arvalid`s, the D$ first);
+the grant flip-flop then holds it to the last beat as before. Both caches raise `arvalid` from a flip-flop,
+so the new path is short.
+
+| `+rlat=20 +blat=10` | Before | `FAST_READ` |
+|---|---|---|
+| Linux boot, CPI outside WFI, prefetch off | 1.957 | **1.904 (−2.7 %)** |
+| Front end empty (of those cycles) | 19.8 % | 18.4 % |
+| Fill waits that cost, (C) | 4.84 M | 2.20 M |
+| Linux boot, prefetch on | 1.981 | 1.951 (still +2.5 % over off) |
+| SIM_CACHE: I$ misses in a row (cycles each) | 13.0 | 11.0 |
+| SIM_CACHE: D$ load misses / store misses in a row | 12.0 / 10.6 | 11.0 / 9.7 |
+
+The prefetch stays off.
