@@ -317,9 +317,10 @@ answer of a D$ hit is visible in the cycle the instruction reaches MA, so **MA d
 | t+2 | MA: the answer is visible (hit) | |
 
 **The condition for EX to make a request** (`lsu_e_valid`) uses only signals that settle early; it looks at
-neither the translation result nor PMP: `ex_valid & ex_ls & ~ex_exc_r & ~ex_e_blocked & ~stall_ma &
-~lu_hazard`. When EX made a request but could not advance (waiting for the walker), `ex_e_blocked` is set and
-that instruction does not issue from EX again (it is taken back in MR and goes from MA).
+neither the translation result nor PMP: `ex_valid & ex_ls & ~ex_exc_r & ~stall_mr & ~lu_hazard & ~fp_wait`. A
+load or a store that asks always leaves EX in that cycle. An access that missed in the DTLB goes on to MR, where
+its request is taken back (`mr_tlb_wait`, decision 73), and goes from MA. (Until decision 73 a DTLB miss held
+EX, and `ex_e_blocked` kept such an instruction from asking again from EX.)
 
 **The condition for MR to let it go** (`lsu_e_go`):
 
@@ -353,7 +354,8 @@ record of owners by one with that answer, but passes it to neither the core nor 
 records of the ROB and the arbiter always agree with the number of requests.
 
 **The page table walker** takes the port only when the LSU is empty and MR and MA have no accesses
-(`lsu_idle & ~(mr_valid & mr_mem) & ~(ma_valid & ma_mem)`). While the walker holds it, `d_req_cancel` is 0
+(`lsu_idle & ~(mr_valid & mr_mem & ~mr_tlb_wait) & ~(ma_valid & ma_mem)`; the access in MR that waits for
+the walk does not count, decision 73). While the walker holds it, `d_req_cancel` is 0
 (the walker does not cancel).
 
 **PMP left the stall net**. When requests were made in MR, the PMP result went into "can MR advance" → the
@@ -404,10 +406,13 @@ and nothing changes on the cache side.
   queues an access fault parcel. With translation and PMP in the same cycle it was 20.8 ns in real routing
   and did not reach 50 MHz (section 18 of `LitexSystem/docs/TIMING.md`, decision 50).
 - **Data side**: the TLB is looked up when the address comes out in EX; translation faults (page faults,
-  access faults the walk left) become exceptions on the spot, and a miss stalls EX. **PMP is one cycle later
+  access faults the walk left) become exceptions on the spot. A miss does not stall EX: the instruction goes
+  on to MR and waits there (`mr_tlb_wait`), asking the DTLB again with its own address until the walk has
+  filled it, and takes the physical address or the fault then (decision 73). **PMP is one cycle later
   in MR**, checking the physical address EX held through the `p_*` port (`p_fail`). The PMP checker was at
   first shared with the walker, but its entry multiplexer was on the MR → request path, so **the walker got a
-  checker of its own** (decision 49). The walker takes the port only when no access is waiting in MR.
+  checker of its own** (decision 49). The walker takes the port only when no access is waiting in MR (other
+  than the one waiting for the walk).
 
 ### 6.4 PMP
 
@@ -1483,7 +1488,7 @@ here.
 
 > The table below is from when requests were issued from MR. Now requests are issued from EX, and MR only
 > decides whether to let them through or cancel them (5.4, decision 58). `stall_mr` became the same as
-> `stall_ma`.
+> `stall_ma`, and since decision 73 is `stall_ma | mr_tlb_wait` (`ex_mmu_wait` is gone from `stall_ex`).
 
 | Signal | Definition | Meaning |
 |---|---|---|
@@ -1507,7 +1512,8 @@ here.
   same condition.
 - **The walker** takes the port only when no access is waiting in MR.
 - `mdu_active` / `fpu_active` look at `ex_exc_pre` (MDU / FPU instructions do not go through translation, so
-  the meaning is the same, and the DTLB is taken off EX's stall).
+  the meaning is the same, and the DTLB is taken off EX's stall). Since decision 72 they look at `ex_exc_r`
+  alone.
 
 Measured: `t19_ldbench` of SIM_SYS went 93641 → 96515 (+2874, **+3.07 %**), almost matching the 2872
 estimated from the trace. `t16_bench` +8; `t05_csr` / `t07_trap` / `t12_priv`, full of serializing
@@ -1607,3 +1613,5 @@ cost a cycle, so it is estimated at **about +3 % on this load** (2872 / 93641).
 | 69 | Performance counters (Zihpm, Sscofpmf) | **4 counters `mhpmcounter3` to `6` (the `HPM_COUNTERS` parameter of `CORE_CSR`), 19 events (18 and 19 added for the L2 on 2026-10-06; 20 to 24 for the memory waits, decision 71), Sscofpmf overflow interrupts and per-level exclusion**. The core passes `CORE_CSR` one bit per event telling whether it happened this cycle (`hpm_ev`), and `CORE_CSR` counts one cycle late (event sources are deep in the pipeline or in the caches, so they are registered once before the selection and the 64-bit add; the level at the time is registered with them to apply MINH / SINH / UINH). CSR instructions are serialized, so the difference of two reads is exact regardless of the delay. Event numbers: 1 cycles, 2 retired instructions, 3 retired loads, 4 retired stores, 5 conditional branches (resolved in EX and late branches resolved in MR), 6 mispredicted branches and jumps, 7 I$ misses (line fills), 8 D$ misses (same, including DMA), 9 ITLB misses (page table walks), 10 DTLB misses (same), 11 cycles waiting for the D$, 12 cycles with the front end empty, 13 load-use cycles, 14 cycles waiting for the MDU / FPU, 15 exceptions, 16 interrupts, 17 cycles with the back end stuck, 18 reads to the L2 (number of L1 fills; cycles where `CPU_L2` accepted AR), 19 of those, L2 misses (both 18 and 19 are 0 in the `L2_SIZE = 0` configuration; section 7 of `CPU_L2_SPEC.md`, `LLC-loads` / `LLC-load-misses` of `perf`). 11 to 13 and 17 are, like the test bench's profiler, "the reason one cycle was lost at the issue point (ID→EX)", one reason per cycle. 5 and 6 are counted in EX / MR, so branches on paths later discarded may slip in slightly. Overflow: when a counter wraps from all 1s to 0, OF is set, and LCOFIP (`mip` bit 13) is raised only when OF goes from 0 to 1. It can be delegated to S with `mideleg`, and S clears it through `sip`. **Smcntrpmf** was added too (MINH / SINH / UINH of `mcyclecfg` / `minstretcfg`). With Sscofpmf but no Smcntrpmf, OpenSBI does not let Linux use the fixed counters (`cycle` / `instret`) that cannot exclude levels, so `cycles` / `instructions` of `perf` were `<not supported>`. Linux uses the counters through OpenSBI's SBI PMU extension. The device tree also lists `cycles` / `instructions` as mapped to the fixed counters only (so that OpenSBI answers "present" to SBI 3.0 event info, which Linux asks at boot). Also OpenSBI (v1.9 series, upstream the same) has a bug where a stop with RESET on a counter that is already stopped does not release it, and Linux's `riscv_pmu_del()` releases with "stop, then stop with RESET", so one counter was lost every time a `perf` event ended (raw events `<not counted>`, 0 samples from `perf record`). Fixed by `LitexSystem/software/boot/opensbi_patches/0001`, which `build_opensbi.sh` applies to its copy. Which events can be counted on which counters is told to OpenSBI by the device tree's `pmu` node (`riscv,event-to-mhpmevent` and so on). `t32_pmu` (SIM_CORE / SIM_SYS), `d04_pmu` (SIM_SYS: cache and TLB events, L2 reads and misses), `make pmu-sbi` (SIM_BIOS: checks OpenSBI's SBI PMU extension called the way Linux calls it; fails with an unpatched OpenSBI), `make linux-perf` (SIM_BIOS: `perf` on Linux; `cycles` / `instructions` and 4 raw events counted together 100 % of the time, and `perf record` takes samples by overflow interrupts), mutations M320 to M340 (SIM_CORE), M13 to M18 (SIM_SYS) |
 | 70 | The checks of CSR instructions | **Made from the address of the instruction in EX alone (`ex_addr`), separately from the read address**. The read address of the CSR file is `dbg_csr_sel ? dbg_regno_q : ex_csr_addr`, and when the checks (implemented, level, read-only) were made from it, the debugger's register number went through them into the EX exception, the stall and on to the FPU and the D$ (the worst path of section 34 of `LitexSystem/docs/TIMING.md`). The debugger reads CSRs only while halted, so EX never needs its number. `csr_check` is one function called twice (`ex_addr` without debugger rights, `rd_addr` with `dbg_access`), so the two lists of CSRs cannot drift apart. Mutations M35, M36, M100, M291, M292, M327, M359, M360 |
 | 71 | Events for the memory waits (M0) | **Five more events, 20 to 24 (`HPM_EVENTS` 25; 25 and 26 since M3: the I$'s prefetches and the misses served by them, `HPM_EVENTS` 27, event 7 counting demand fills only)**: 20 MA waits for a store (not AMO / SC), 21 MA waits while the D$ handles a miss (an MSHR in use, from the miss to the end of its fill, the copy of a dirty victim included; `ev_miss` of `DCACHE`), 22 one or more line fills outstanding, 23 two or more (the I$ and D$ together; outstanding = asked for with `arvalid` and not ended with the last beat, so a fill waiting for the bus counts), 24 MA waits while the D$ copies the dirty victim of a miss out (`ev_vic_copy`; before M5 this came before the fill was asked for, since M5 it runs alongside the fill). With event 11 (all of MA's waits) they split the waits into stores / loads, misses / the rest, and the victim copy. Two fills are never **under way** together: the arbiter of `CPU_CACHE` keeps a read until its last beat and the L2 takes one transaction at a time, so 23 says how often a second miss waits behind the first. Raw events up to 31 are already in the device tree (`raw-event-to-mhpmcounters`), so OpenSBI and Linux need nothing new. `d04_pmu` 5 (SIM_SYS), `t32_pmu` (24 the last, 25 none), mutations M20 to M25 of SIM_SYS; the SIM_SYS profiler (`+profile`) shows the same split per access, the distance from each load to the first use of its value, and the fills outstanding per cycle (`LitexSystem/docs/BENCH.md` 18), and `software/bench/workload.sh` counts them on the board |
+| 72 | The exception that MDU / FPU / memory / branch instructions look at in EX (T5) | **Only what they can have: ID's exception (`ex_exc_r`), and for a load or a store the misaligned address**. `mdu_active`, `fpu_active`, `d_tr_req`, `ex_late`, `ex_mispredict` and the update of the BTB looked at `ex_exc_pre`, which also holds the checks of a CSR instruction; none of these is one, so the meaning is the same, but synthesis ran the CSR checks (`ex_csr_addr` → `csr_check`, 6 levels of CARRY4) through them into the start of the FPU / MDU, the request to the D$ and its ROB (the worst path of section 38 of `LitexSystem/docs/TIMING.md`). `ex_exc` (into MR) still has all of `ex_exc_pre` |
+| 73 | A DTLB miss is not a stall of EX (T2) | **The access goes on to MR and waits there for the walk (`mr_tlb_wait`)**. The compare of the DTLB, behind the forwarding from MA and the add of the address, went on into `ex_advance` (fanout 1,500) and from there into the whole pipeline and the front end: the worst family of sections 32 and 36 to 39 of `LitexSystem/docs/TIMING.md`. A miss only needs to be known in the next cycle, where the walk starts anyway. Now EX registers it (`mr_tlb_wait <= d_tr_req & ~d_tr_ready`); MR stalls on that register (`stall_mr = stall_ma \| mr_tlb_wait`), takes back the request EX made (`lsu_e_go`), lets the walker take the port (`lsu_idle` does not count it), and while it waits the MMU's data port is given MR's address, size and kind (`d_vaddr = mr_tlb_wait ? mr_vaddr : mem_addr`, a select by a flip-flop in front of the compare, whose result now ends in flip-flops). The cycle the DTLB answers, MR takes the physical address (or the fault the walk left, as a page fault or an access fault of MR, `mtval` the virtual address) and goes on in the next cycle; the access goes from MA. That is the same cycle count as before, when EX waited and its request went from MA too (`ex_e_blocked`, now gone: a load or a store that asks always leaves EX): every test of SIM_CORE runs in exactly as many cycles. While MR waits, MA can hand its instruction over (a bubble in MA, the branch kept for that since decision 58) and the FPU's P0 is empty (MR holds a load or a store). `t14_mmu` 53 to 59 (AMOs and a load that page-fault after a walk), mutations M361 to M366 (SIM_CORE), M23 and M146 retargeted |

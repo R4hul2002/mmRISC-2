@@ -62,7 +62,7 @@ MUTATIONS=(
 "14#CPU_CACHE/CPU_CACHE/CPU_CACHE.sv#s%assign ev_ic_refill = ic_axi4_arvalid \& ic_axi4_arready \& ~ic_ar_pf;%assign ev_ic_refill = 1'b0;%#PMU: no I$ miss events (d04)"
 "15#CPU_MMU/CORE_MMU/CORE_MMU.sv#s%ptw_need \& ~kill \& ~d_need_walk;%ptw_need \& ~kill \&  d_need_walk;%#PMU: the ITLB miss event counts the walks of the data side (d04)"
 "16#CPU_MMU/CORE_MMU/CORE_MMU.sv#s%assign ev_dtlb_miss = ~grant \& lsu_idle \& ptw_need \& ~kill \&  d_need_walk;%assign ev_dtlb_miss = ptw_need \&  d_need_walk;%#PMU: a DTLB miss counted every cycle it waits for the walker (d04)"
-"19#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%~stall_ma \& ~lu_hazard \& ~fp_wait;%~stall_ma \& ~lu_hazard;%#core: an FSD waiting for the FPU asks the cache from EX, is taken back and goes from MA (fploop's cycle bound)"
+"19#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%~stall_mr \& ~lu_hazard \& ~fp_wait;%~stall_mr \& ~lu_hazard;%#core: an FSD waiting for the FPU asks the cache from EX, is taken back and goes from MA (fploop's cycle bound)"
 "17#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign hpm_ev\[18\] = ev_l2_read;%assign hpm_ev[18] = 1'b0;%#PMU: no L2 read events (d04)"
 "18#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign hpm_ev\[19\] = ev_l2_miss;%assign hpm_ev[19] = ev_l2_read;%#PMU: the L2 miss event counts every L2 read (d04)"
 "20#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign hpm_ev\[20\] = stall_ma \& (ma_cmd == 4'd1);%assign hpm_ev[20] = stall_ma;%#PMU (M0): the store wait event counts the waits of loads too (d04)"

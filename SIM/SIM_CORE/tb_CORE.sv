@@ -801,7 +801,7 @@ module tb_CORE;
             else if ((u_core.mdu_active & ~u_core.mdu_done) |
                      u_core.fp_wait)
                                              p_unit   <= p_unit   + 1;
-            else if (u_core.ex_mmu_wait)     p_mmu    <= p_mmu    + 1;
+            else if (u_core.mr_tlb_wait)     p_mmu    <= p_mmu    + 1;
             else if (~u_core.fq_valid)       p_starve <= p_starve + 1;
             else if (~u_core.id_ready)       p_serial <= p_serial + 1;
             else                             p_other  <= p_other  + 1;

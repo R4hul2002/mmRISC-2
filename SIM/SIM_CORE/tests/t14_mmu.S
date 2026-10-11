@@ -254,6 +254,27 @@ in_s:
     TEST_EQ(32, x29, 1)
     TEST_EQ(33, x28, CAUSE_SPAGE)
 
+    // ---- an AMO is a store to the translation: its page faults are store
+    // page faults, also when they are found after a walk (the access waits
+    // for it in MR) ----
+    li   x29, 0
+    li   x22, 0x40004000                 // nothing mapped: the walk faults
+    amoadd.d x15, x11, (x22)
+    TEST_EQ(53, x29, 1)
+    TEST_EQ(54, x28, CAUSE_SPAGE)
+    TEST_EQ_REG(55, x27, x22)            // mtval is the virtual address
+    sfence.vma                           // not in the DTLB: walked, then
+    li   x29, 0                          // read only
+    li   x21, 0x40002000
+    amoswap.d x15, x11, (x21)
+    TEST_EQ(56, x29, 1)
+    TEST_EQ(57, x28, CAUSE_SPAGE)
+    li   x29, 0
+    li   x22, 0x40004000                 // and a load there, after a walk:
+    ld   x15, 0(x22)                     // a load page fault
+    TEST_EQ(58, x29, 1)
+    TEST_EQ(59, x28, CAUSE_LPAGE)
+
     // ---- execute ----
     la   x10, exec_probe
     li   x11, 0x80000000

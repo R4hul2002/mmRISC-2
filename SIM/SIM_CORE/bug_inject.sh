@@ -52,6 +52,9 @@
 #   - the select from MR forwarding the address of a load: EX waits for
 #     that load (lu_hazard) and takes nothing from MR in the meantime that
 #     it keeps
+#   - 247, EX asking again while it waits for the walker (ex_e_blocked):
+#     since T2 (2026-10-11) a DTLB miss does not hold EX, a load or a store
+#     that asks always leaves EX, and ex_e_blocked is gone
 #   - "the access behind a trapping instruction is still issued" (41 until
 #     the accesses went from EX, 2026-10): what decides it now is lsu_e_go,
 #     which 240 - 250 take apart piece by piece
@@ -106,7 +109,7 @@ MUTATIONS=(
 "20#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/assign ma_fwd_data = (ma_mem \& ma_is_load) ? lsu_resp_data : ma_result;/assign ma_fwd_data = ma_result;/#core: a load in MA forwards its address"
 "21#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/                ex_rs1_data <= ex_a_fwd;/                ex_rs1_data <= ex_rs1_data;/#core: a stalled EX does not keep the forwarded operand"
 "22#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/                ex_rs2_data <= ex_b_fwd;/                ex_rs2_data <= ex_rs2_data;/#core: a stalled EX does not keep the forwarded store data"
-"23#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/assign stall_mr      = stall_ma;/assign stall_mr      = 1'b0;/#core: MR moves on while MA waits for the cache"
+"23#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/assign stall_mr      = stall_ma | mr_tlb_wait;/assign stall_mr      = mr_tlb_wait;/#core: MR moves on while MA waits for the cache"
 "24#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/                ma_valid   <= 1'b0;/                ma_valid   <= ma_valid;/#core: MA is not emptied by a flush (what MR held retires as a no-op; t07 counts minstret)"
 "25#CPU_CORE/CPU_CORE/CPU_CORE.sv#s@                wb_valid <= 1'b0;       // MA keeps its instruction : bubble@                wb_valid <= wb_valid;@#core: WB keeps its instruction while MA waits and retires it again"
 "26#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/                ex_valid      <= id_advance \& fq_valid \& ~redirect_valid;/                ex_valid      <= id_advance \& fq_valid;/#core: the instruction behind a taken branch is not killed"
@@ -143,7 +146,7 @@ MUTATIONS=(
 "44#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/    assign wfi_wait    = fq_valid \& dec_is_wfi \& ~irq_any \& ~step_active \& ~dbg_haltreq;/    assign wfi_wait    = 1'b0;/#core: WFI does not wait"
 "45#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/            2'd3:    misaligned = |mem_addr\[2:0\];/            2'd3:    misaligned = 1'b0;/#core: a misaligned double word is not detected"
 "46#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign mr_is_mem     = mr_valid \& mr_mem \& ~mr_exc;%assign mr_is_mem     = mr_valid \& mr_mem;%#core: an instruction that trapped still touches memory"
-"146#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign ex_mmu_wait   = d_tr_req \& ~d_tr_ready \& ~flush;%assign ex_mmu_wait   = 1'b0;%#core: an access leaves EX before its address is translated"
+"146#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%mr_tlb_wait   <= d_tr_req \& ~d_tr_ready;%mr_tlb_wait   <= 1'b0;%#core: an access that missed in the DTLB leaves MR before its address is translated"
 "47#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/assign trap_epc_c   = ma_pc;/assign trap_epc_c   = ma_pc + 64'd4;/#core: mepc points behind the instruction that trapped"
 "48#CPU_CORE/CPU_CORE/CPU_CORE.sv#s|                                             : {32'd0, ex_insn};|                                             : 64'd0;|#core: mtval of an illegal CSR access is empty"
 "49#CPU_CORE/CORE_DEC/CORE_DEC.sv#s/csr_wr = (funct3\[1:0\] == 2'b01) || (rs1 != 5'd0);/csr_wr = 1'b1;/#decoder: CSRRS with x0 writes the CSR"
@@ -256,6 +259,12 @@ MUTATIONS=(
 "358#CPU_CORE/CORE_RF/CORE_RF.sv#s/rs2_data = lvt\[rs2\] ? bank_b\[rs2\] : bank_a\[rs2\];/rs2_data = bank_a[rs2];/#RF: the live value table is not read for rs2 (t33)"
 "359#CPU_CORE/CORE_CSR/CORE_CSR.sv#s/csr_check(ex_addr, 1'b0,/csr_check(ex_addr, 1'b1,/#CSR: a program reaches dcsr / dpc / dscratch (t05)"
 "360#CPU_CORE/CORE_CSR/CORE_CSR.sv#s/csr_check(rd_addr, dbg_access,/csr_check(rd_addr, 1'b0,/#debug: the debugger cannot reach dcsr / dpc / dscratch (t23)"
+"361#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/assign stall_mr      = stall_ma | mr_tlb_wait;/assign stall_mr      = stall_ma;/#core (T2): MR does not wait for the walk of its access"
+"362#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/~flush \& ~mr_tlb_wait \&/~flush \&/#core (T2): the request from EX goes although its address missed in the DTLB"
+"363#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/(mr_tlb_wait ? mr_vaddr    : mem_addr)/(mem_addr)/#core (T2): the DTLB is asked with EX's address while MR waits"
+"364#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/lsu_idle \& ~(mr_valid \& mr_mem \& ~mr_tlb_wait)/lsu_idle \& ~(mr_valid \& mr_mem)/#core (T2): the walker waits for the access that waits for it"
+"365#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/if (d_tr_fault != 2'd0) begin/if (1'b0) begin/#core (T2): the fault a walk for MR left behind is not taken"
+"366#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)/? (mr_is_load ? EXC_LPAGE : EXC_SPAGE)/#core (T2): an AMO's page fault found in MR is a load page fault"
 "338#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign hpm_ev\[2\]  = commit;%assign hpm_ev[2]  = commit | trap_en;%#PMU: a trap counted as a retired instruction (t32)"
 "339#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%if (!inhibit_cy \&\& !cy_filt) %if (!inhibit_cy) %#Smcntrpmf: mcyclecfg does not stop mcycle (t32)"
 "340#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%assign ir_filt = (priv_r == PRIV_M) ? ir_minh : (priv_r == PRIV_S) ? ir_sinh : ir_uinh;%assign ir_filt = (priv_r == PRIV_M) ? ir_minh : (priv_r == PRIV_S) ? ir_sinh : 1'b0;%#Smcntrpmf: UINH of minstretcfg ignored (t32)"
@@ -398,7 +407,6 @@ MUTATIONS=(
 "244#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign mr_spec_ok  = (mr_cmd == 4'd0) \& (mr_paddr >= MEM_BASE);%assign mr_spec_ok  = (mr_cmd == 4'd0);%#LSU: an uncached load goes while the instruction in front can still trap (t25)"
 "245#CPU_CORE/CORE_LSU/CORE_LSU.sv#s%if (flush)                            drop <= os_next;%if (1'b0)                             drop <= os_next;%#LSU: an answer still in flight at a trap is handed to the next access (t25)"
 "246#CPU_CORE/CORE_LSU/CORE_LSU.sv#s%assign d_req_paddr  = e_acc_q ? e_paddr\[PADDR_WIDTH-1:0\] : m_paddr_q;%assign d_req_paddr  = m_paddr_q;%#LSU: a request from EX gets the physical address of the last one from MA"
-"247#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%else if (lsu_e_accept)    ex_e_blocked <= 1'b1;%else if (lsu_e_accept)    ex_e_blocked <= 1'b0;%#LSU: EX keeps issuing while it waits for the walker (which then never gets the port)"
 "248#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%                ma_issued <= mr_issued;%                ma_issued <= 1'b0;%#LSU: an access that went from EX goes again from MA"
 "250#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign older_done  = ~ma_valid | commit;%assign older_done  = 1'b1;%#LSU: a store goes while the instruction in front waits and may still trap (t25)"
 "251#CPU_CORE/CORE_LSU/CORE_LSU.sv#s/assign m_accept = m_valid \& d_req_ready;/assign m_accept = m_valid;/#LSU: an access from MA counts as issued although the cache did not take it"

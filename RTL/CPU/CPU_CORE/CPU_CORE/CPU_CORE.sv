@@ -414,7 +414,8 @@ module CPU_CORE
     //   iterative unit must not start while MA is still waiting for the
     //   cache, and it has to be killed when a trap empties the pipeline.
     //=================================================================
-    logic ex_mem, stall_ma, stall_ex, ex_advance, ex_mmu_wait;
+    logic ex_mem, stall_ma, stall_ex, ex_advance;
+    logic mr_tlb_wait;   // MR's access missed in the DTLB in EX (T2)
     logic mr_is_mem, stall_mr, mr_advance, lu_hazard;
     logic kill_ex, ctrl_behind_late;          // late branch (see there)
     logic id_ready, id_advance, pipe_busy, serial_busy, wfi_wait, flush;
@@ -661,9 +662,11 @@ module CPU_CORE
             .result   (mdu_result)
         );
 
-    // ex_exc_pre is all an MDU instruction can raise (the translation never
-    // sees it), and it keeps the DTLB off the stall of EX
-    assign mdu_active = ex_valid & ex_is_mdu & ~ex_exc_pre;
+    // An MDU instruction can only bring an exception from ID (ex_exc_r):
+    // the checks of EX are for CSRs and memory, which it is not. Not
+    // ex_exc_pre, which has the CSR checks in it, behind EX's CSR number
+    // (LitexSystem/docs/TIMING.md 38)
+    assign mdu_active = ex_valid & ex_is_mdu & ~ex_exc_r;
     // Not while MA is waiting for the cache, nor while a load an operand
     // comes from is still in MR: the operand is not there yet, and a unit
     // that runs for several cycles latches what it is given at the start.
@@ -681,7 +684,9 @@ module CPU_CORE
     //   file's second port. P0 and P1 of the unit stand where MR and MA
     //   stand, and stop and are taken back with them: MR and MA stop
     //   together (stall_ma), a trap or an xRET at MA empties MR (flush), and
-    //   only a trap takes the instruction in MA itself back.
+    //   only a trap takes the instruction in MA itself back. MR also stops
+    //   alone while its access waits for the DTLB (mr_tlb_wait); then MR
+    //   holds a load or a store, P0 is empty and lets P1 go on.
     //
     //   fp_pend / gpr_pend : the registers the FPU still owes. An instruction
     //   that reads one waits: in EX for a floating point register (the
@@ -729,9 +734,9 @@ module CPU_CORE
     assign fpo_fp  = fpu_out_valid & ~fpu_out_is_int;
     assign fpo_int = fpu_out_valid &  fpu_out_is_int & (fpu_out_rd != 5'd0);
 
-    // ex_exc_pre is all a floating point instruction can raise (it never
-    // goes to the translation)
-    assign fpu_active   = ex_valid & ex_fp_arith & ~ex_exc_pre;
+    // as for the MDU: only ID's exception (ex_exc_r) can be a floating
+    // point instruction's
+    assign fpu_active   = ex_valid & ex_fp_arith & ~ex_exc_r;
     assign fpu_in_valid = fpu_active & ex_advance & ~kill_ex & ~flush;
 
     logic [31:0] fp_pend, gpr_pend;
@@ -1035,8 +1040,10 @@ module CPU_CORE
 
     // The address is only handed to the MMU when the instruction is going to
     // use it. A misaligned access is reported as misaligned and never
-    // translated, which is the order the specification asks for.
-    assign d_tr_req = ex_valid & (ex_is_load | ex_is_store) & ~ex_exc_pre;
+    // translated, which is the order the specification asks for. Of
+    // ex_exc_pre only what a load or a store can have: ID's exception and
+    // the misaligned address, not the CSR checks.
+    assign d_tr_req = ex_valid & (ex_is_load | ex_is_store) & ~ex_exc_r & ~misaligned;
 
     always @(*) begin
         ex_exc       = ex_exc_pre;
@@ -1082,11 +1089,11 @@ module CPU_CORE
             .i_fault      (i_tr_fault),
             .i_chk_paddr  (64'(i_req_paddr)),
             .i_chk_fail   (i_chk_fail),
-            .d_req        (d_tr_req),
-            .d_vaddr      (mem_addr),
-            .d_size       (ex_mem_size),
-            .d_is_load    (ex_is_load),
-            .d_is_store   (ex_is_store),
+            .d_req        (d_tr_req | mr_tlb_wait),
+            .d_vaddr      (mr_tlb_wait ? mr_vaddr    : mem_addr),
+            .d_size       (mr_tlb_wait ? mr_size     : ex_mem_size),
+            .d_is_load    (mr_tlb_wait ? mr_is_load  : ex_is_load),
+            .d_is_store   (mr_tlb_wait ? mr_is_store : ex_is_store),
             .d_ready      (d_tr_ready),
             .d_paddr      (d_tr_paddr),
             .d_fault      (d_tr_fault),
@@ -1099,7 +1106,8 @@ module CPU_CORE
             .sfence_vaddr (ma_sfence_vaddr),
             .sfence_asid  (ma_sfence_asid),
             .kill         (flush),
-            .lsu_idle     (lsu_idle & ~(mr_valid & mr_mem) & ~(ma_valid & ma_mem)),
+            .lsu_idle     (lsu_idle & ~(mr_valid & mr_mem & ~mr_tlb_wait) &
+                           ~(ma_valid & ma_mem)),
             .ptw_active   (ptw_active),
             .m_req_valid  (ptw_req_valid),
             .m_req_ready  (ptw_req_ready),
@@ -1158,24 +1166,25 @@ module CPU_CORE
     logic        lsu_m_valid, lsu_m_accept;
     logic        lsu_d_req_cancel;
     logic        ex_ls;            // a load or a store of any kind (not fence.i)
-    logic        ex_e_blocked;     // EX issued, but stayed: let MA do it
     logic        mr_e_acc;         // MR's request went from EX last cycle
     logic        mr_issued_r, mr_issued;
     logic        mr_spec_ok, older_done;
 
     assign ex_ls       = ex_is_load | ex_is_store;
     // Only signals that settle early: nothing of the translation or of the
-    // PMP. A request of an instruction that does not go on to MR (it waits
-    // for the page table walker) is taken back in the next cycle. A store
+    // PMP. A load or a store that asks always goes on to MR in this cycle:
+    // what else holds EX (the MDU, a control transfer behind a late branch)
+    // is not its, so the request is never asked twice from EX (until T2 a
+    // DTLB miss held EX, and ex_e_blocked kept it from asking again). A store
     // or a load that waits for the FPU (the data of FSD, a register FLD
     // writes) does not ask: it would be taken back and then go from MA,
     // two cycles later than from EX once the answer is there.
-    assign lsu_e_valid = ex_valid & ex_ls & ~ex_exc_r & ~ex_e_blocked &
-                         ~stall_ma & ~lu_hazard & ~fp_wait;
+    assign lsu_e_valid = ex_valid & ex_ls & ~ex_exc_r &
+                         ~stall_mr & ~lu_hazard & ~fp_wait;
 
     assign mr_spec_ok  = (mr_cmd == 4'd0) & (mr_paddr >= MEM_BASE);  // a cacheable load
     assign older_done  = ~ma_valid | commit;
-    assign lsu_e_go    = mr_e_acc & mr_valid & ~mr_exc & ~flush &
+    assign lsu_e_go    = mr_e_acc & mr_valid & ~mr_exc & ~flush & ~mr_tlb_wait &
                          ~(ma_valid & ma_mem & ~ma_issued) &
                          (mr_spec_ok | older_done);
     assign mr_issued   = mr_e_acc ? lsu_e_go : mr_issued_r;
@@ -1224,7 +1233,6 @@ module CPU_CORE
     // where each access stands
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            ex_e_blocked <= 1'b0;
             mr_e_acc     <= 1'b0;
             mr_issued_r  <= 1'b0;
             ma_issued    <= 1'b0;
@@ -1234,11 +1242,6 @@ module CPU_CORE
             ma_size      <= 2'd0;
             ma_signed    <= 1'b0;
         end else begin
-            // EX issued but did not go on (it waits for the page table
-            // walker): no more tries from EX, MA will do it
-            if (flush || kill_ex || ex_advance)  ex_e_blocked <= 1'b0;
-            else if (lsu_e_accept)    ex_e_blocked <= 1'b1;
-
             if (flush) begin
                 mr_e_acc    <= 1'b0;
                 mr_issued_r <= 1'b0;
@@ -1359,10 +1362,17 @@ module CPU_CORE
     assign mr_is_mem     = mr_valid & mr_mem & ~mr_exc;
     // MA waits for the answer of its access, whichever way it went
     assign stall_ma      = ma_valid & ma_mem & ~lsu_resp_valid;
-    assign stall_mr      = stall_ma;
+    // MR also waits while its access has no physical address yet: it missed
+    // in the DTLB in EX, and the table is being walked. The miss is not a
+    // stall of EX (T2 of LitexSystem/docs/ROADMAP.md): the compare of the
+    // DTLB, behind the forwarding and the add of the address, went on into
+    // the stall of the whole pipeline (LitexSystem/docs/TIMING.md 32, 36 to
+    // 39). The instruction goes on to MR, which asks the DTLB again with its
+    // own address until it hits, and takes the address (or the fault) then.
+    // Its request to the cache was taken back and goes from MA, as it did
+    // when EX waited, so it costs no cycle.
+    assign stall_mr      = stall_ma | mr_tlb_wait;
     assign mr_advance    = ~stall_mr;
-    // the page table is being walked : the address is not there yet
-    assign ex_mmu_wait   = d_tr_req & ~d_tr_ready & ~flush;
 
     // Load-use: an instruction in EX reads a register that a load in MR is
     // about to bring. It waits one cycle, after which the load is in MA and
@@ -1383,10 +1393,10 @@ module CPU_CORE
     // of the load (then in MA) is on the cache port (ex_late, "late
     // branch"). Two thirds of the waits of CoreMark and nine tenths of those
     // of Dhrystone were such branches (LitexSystem/docs/BENCH.md 10).
-    assign ex_late   = ex_valid & ex_is_branch & lu_int & ~lu_fp & ~ex_exc_pre & ~flush;
+    assign ex_late   = ex_valid & ex_is_branch & lu_int & ~lu_fp & ~ex_exc_r & ~flush;
     assign lu_hazard = ex_valid & (lu_int | lu_fp) & ~flush & ~ex_late;
 
-    assign stall_ex      = stall_mr | ex_mmu_wait | lu_hazard | ctrl_behind_late
+    assign stall_ex      = stall_mr | lu_hazard | ctrl_behind_late
                                     | (mdu_active & ~mdu_done & ~flush)
                                     | fp_wait;
     assign ex_advance    = ~stall_ex;
@@ -1423,8 +1433,7 @@ module CPU_CORE
     //   point of the predictor.
     //
     //   A control transfer never goes to the MMU or to a unit that takes
-    //   more than one cycle, and its exception is already complete in
-    //   ex_exc_pre. What it has to wait for is only that its operands are
+    //   more than one cycle, and its only exception is ID's (ex_exc_r). What it has to wait for is only that its operands are
     //   there: MA is not waiting for a load, and no load it reads is in MR.
     //   It does not wait for EX to move on, which also depends on whether
     //   the cache takes the access in MR, and that keeps the PMP and the
@@ -1459,7 +1468,7 @@ module CPU_CORE
     assign ex_seq_pc  = ex_pc + (ex_is_rvc ? 64'd2 : 64'd4);
     assign ex_is_ctrl = ex_is_branch | ex_is_jal | ex_is_jalr;
 
-    assign ex_mispredict = ex_valid & ex_is_ctrl & ~ex_exc_pre &
+    assign ex_mispredict = ex_valid & ex_is_ctrl & ~ex_exc_r &
                            ((take_branch != ex_pred_taken) |
                             (take_branch & (target_pc != ex_pred_target)));
 
@@ -1518,7 +1527,7 @@ module CPU_CORE
     // ran into the address of the buffer's update and through its read and
     // tag compare to its write enable (LitexSystem/docs/TIMING.md 29). Only
     // the enable waits for the answer.
-    assign btb_upd_valid  = (ex_ctrl_go & ~ex_exc_pre) | mr_late_go;
+    assign btb_upd_valid  = (ex_ctrl_go & ~ex_exc_r) | mr_late_go;
     assign btb_upd_pc     = mr_late_pend ? mr_pc         : ex_pc;
     assign btb_upd_is32   = mr_late_pend ? ~mr_is_rvc    : ~ex_is_rvc;
     assign btb_upd_target = mr_late_pend ? mr_br_target  : target_pc;
@@ -1828,6 +1837,7 @@ module CPU_CORE
             mr_cmd        <= 4'd0;
             mr_vaddr      <= 64'd0;
             mr_paddr      <= 64'd0;
+            mr_tlb_wait   <= 1'b0;
             mr_wdata      <= 64'd0;
             mr_size       <= 2'd0;
             mr_signed     <= 1'b0;
@@ -2010,6 +2020,7 @@ module CPU_CORE
                 mr_cmd        <= ex_mem_cmd;
                 mr_vaddr      <= mem_addr;
                 mr_paddr      <= d_tr_paddr;
+                mr_tlb_wait   <= d_tr_req & ~d_tr_ready;
                 mr_size       <= ex_mem_size;
                 mr_signed     <= ex_mem_signed;
                 mr_wdata      <= ex_is_fp_store ? ex_fs2_fwd : ex_b_fwd;
@@ -2038,6 +2049,19 @@ module CPU_CORE
                 mr_fp_arith<= 1'b0;
                 mr_fp_we   <= 1'b0;
                 mr_fpu     <= 1'b0;
+                mr_tlb_wait<= 1'b0;
+            end else if (mr_tlb_wait && d_tr_ready) begin
+                // MR's address is in the DTLB now (or the walk left a fault
+                // behind): take it, and go on in the next cycle
+                mr_tlb_wait   <= 1'b0;
+                mr_paddr      <= d_tr_paddr;
+                if (d_tr_fault != 2'd0) begin
+                    mr_exc_r      <= 1'b1;
+                    mr_exc_mem    <= 1'b1;
+                    mr_exc_cause_r<= (d_tr_fault == 2'd2)
+                                   ? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)
+                                   : (mr_is_store ? EXC_SFAULT : EXC_LFAULT);
+                end
             end
 
             //---------------------------------------------------------
@@ -2078,10 +2102,8 @@ module CPU_CORE
                 ma_exc_tval_r <= mr_exc_tval;
                 ma_result     <= mr_result;
             end else if (!stall_ma) begin
-                // MA handed its instruction over but MR has nothing to give.
-                // Not reached since MR stalls exactly when MA does
-                // (stall_mr = stall_ma, CPU_CORE_SPEC.md 5.4); kept as the
-                // safe answer should that change again.
+                // MA handed its instruction over but MR has nothing to give:
+                // MR waits for the DTLB (mr_tlb_wait) : bubble
                 ma_valid   <= 1'b0;
                 ma_we_rd   <= 1'b0;
                 ma_mem     <= 1'b0;
@@ -2177,6 +2199,7 @@ module CPU_CORE
                 mr_fp_arith<= 1'b0;
                 mr_fp_we   <= 1'b0;
                 mr_fpu     <= 1'b0;
+                mr_tlb_wait<= 1'b0;
                 ma_valid   <= 1'b0;
                 ma_we_rd   <= 1'b0;
                 ma_mem     <= 1'b0;
@@ -2390,7 +2413,7 @@ module CPU_CORE
     assign hpm_ev[10] = ev_dtlb_miss;                          // DTLB misses (walks)
     assign hpm_ev[11] = stall_ma;                              // waiting for the D$
     assign hpm_ev[12] = ~id_issue & ~redirect_valid & ~stall_ex & ~fq_valid; // front end empty
-    assign hpm_ev[13] = ~id_issue & ~redirect_valid & stall_ex & ~stall_ma &
+    assign hpm_ev[13] = ~id_issue & ~redirect_valid & stall_ex & ~stall_mr &
                         ~hpm_unit_wait & lu_hazard;            // load use
     assign hpm_ev[14] = hpm_unit_wait;                         // waiting for MDU / FPU
     assign hpm_ev[15] = trap_en & ~trap_int_c;                 // exceptions

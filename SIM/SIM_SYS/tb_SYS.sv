@@ -542,7 +542,7 @@ module tb_SYS
                         else if (`CORE.ex_is_mdu)                  q_lu_mdu++;
                         else                                       q_lu_alu++;
                     end
-                    else if (`CORE.ex_mmu_wait)        q_mmu++;
+                    else if (`CORE.mr_tlb_wait)        q_mmu++;
                     else                               q_mr++;
                 end
                 else if (~`CORE.fq_valid) begin
@@ -590,7 +590,7 @@ module tb_SYS
             else if ((`CORE.mdu_active & ~`CORE.mdu_done) |
                      `CORE.fp_wait)
                                           p_unit++;
-            else if (`CORE.ex_mmu_wait)   p_mmu++;
+            else if (`CORE.mr_tlb_wait)   p_mmu++;
             else if (~`CORE.fq_valid)     p_starve++;
             else if (~`CORE.id_ready)     p_serial++;
             else                          p_other++;
