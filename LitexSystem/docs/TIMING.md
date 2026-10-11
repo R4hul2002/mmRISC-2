@@ -1615,3 +1615,27 @@ The path is not a real one: the CSR check only matters for a CSR instruction, wh
 memory or branch instruction, but `ex_exc_pre` holds them all and four users that only care about those
 instructions read it (`mdu_active`, `fpu_active`, `d_tr_req`, `ex_late`). Giving them an `ex_exc_pre` without
 the CSR term takes this start off them (candidate T5). Left as is while it is MET.
+
+## 39. The version with M3: +0.029 ns (2026-10-11)
+
+M3 of `ROADMAP.md` (`CPU_CACHE_SPEC.md` 4.2): the next-line prefetch of the I$, a one-line buffer and its
+control in `ICACHE`.
+
+| | Section 38 | This version |
+|---|---|---|
+| WNS | +0.241 ns | **+0.029 ns** |
+| WHS | | +0.015 ns |
+| LUT | 45,966 (72.5 %) | 46,667 (73.6 %) |
+| FF | 25,740 (20.3 %) | 26,300 (20.7 %) (the 64-byte buffer and its address) |
+| Slices | 86.5 % (13,716) | **90.5 % (14,350)** |
+
+The worst path is the family of T2 again, as in sections 36 and 37: `ma_is_load` (forwarding from MA) →
+EX's operand → address add (CARRY4) → DTLB compare → `ex_advance` (fo=1,530) → the fetch queue's `head_pc` CE
+(24 levels, 74 % routing, +0.029 ns). The first 8 paths all go to `head_pc`, then the same start to the MDU's
+state (+0.071 ns). Nothing of `ICACHE` is near the top, and the path of section 38 (`ex_csr_addr`, T5) is
+gone from it: the same family has measured +0.72, +0.42 and now +0.03 ns with no change to it, so the 0.2 ns
+are placement. But the slices are now over 90 % full, which makes a bad placement more likely; T2 (and T5)
+are due before the next addition.
+
+The prefetch is a loss on the board (`BENCH.md` 21.1); switching it off (`IC_PREFETCH = 0`) also takes its
+logic out of the slices.

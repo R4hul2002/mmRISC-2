@@ -939,5 +939,41 @@ for the SD card and the timers, so cycles are compared outside WFI):
   the bus: a miss behind an unused prefetch should not wait for its whole burst (a second read in the L2 and
   the arbiter, or letting the demand go first), which is the same limit M0 found.
 
-CoreMark and Dhrystone do not change (their code fits in the I$). The board numbers (events 25 and 26 of
-`workload.sh`) are to follow.
+CoreMark and Dhrystone do not change (their code fits in the I$).
+
+### 21.1 On the board (2026-10-11)
+
+`workload.sh` on the bitstream of TIMING 39, against 20.1 (M3 is the only change). **On the board the
+prefetch is a loss.**
+
+| Load | CPI, M1 → M3 | Change | I$ fills / 1000 instr. | Front end empty | L2 reads / 1000 instr. | Prefetches / 1000 instr., used |
+|---|---|---|---|---|---|---|
+| `gunzip` | 1.250 → 1.251 | +0.1 % | 0.78 → 0.47 | 3.0 → 3.0 % | 4.23 → 4.67 | 0.76, 40 % |
+| `md5sum` | 1.137 → 1.140 | +0.3 % | 1.11 → 0.71 | 2.0 → 2.1 % | 4.10 → 4.95 | 1.10, 37 % |
+| `awk` | 1.551 → 1.557 | +0.4 % | 1.35 → 0.89 | 10.0 → 9.9 % | 4.35 → 4.88 | 1.37, 35 % |
+| `ls -lR` | 2.057 → 2.089 | +1.6 % | 31.3 → 18.5 | 22.9 → 23.5 % | 46.2 → 64.7 | 30.8, 41 % |
+| `ext4read` | 2.503 → 2.503 | 0 (*) | 43.3 → 24.0 | 24.2 → 24.5 % | 69.3 → 93.3 | 42.2, 46 % |
+| `sdread` | 2.725 → 2.797 | +2.6 % | 41.2 → 22.9 | 21.7 → 21.7 % | 71.8 → 95.5 | 40.0, 46 % |
+| `forkexec` | 2.123 → 2.167 | +2.1 % | 18.6 → 10.4 | 20.8 → 20.7 % | 36.0 → 46.2 | 18.2, 44 % |
+| `tftp` | 2.775 → 2.886 | **+4.0 %** | 61.1 → 32.1 | 32.4 → 32.8 % | 96.5 → 129.3 | 59.4, 49 % |
+
+- **The prefetch works as in the simulation**: 37 to 49 % of the prefetches serve a miss, and the demand
+  fills of the I$ go down by exactly as many (`tftp`: 28.8 used per 1000 instructions, 29.0 fewer demand
+  fills; the same within 0.1 for every kernel load, which also checks events 25 and 26 against event 7).
+- **But the front end is not empty any less**, and the cycles it is empty per demand fill about double
+  (front end empty cycles / demand fills: `tftp` 14.7 → 29.5, `sdread` 14.4 → 26.5, `forkexec` 23.8 → 43.0).
+  The misses that are left are those where the code jumps to another line, and that is just when the
+  prefetch of the line after the last miss has gone out: the jump's miss waits for its whole burst first.
+- **The back end too**: the L2 reads go up by 29 to 40 % (the unused half of the prefetches), and the D$
+  misses, which share the one read of the bus, wait longer (MA waits on a D$ miss, M1 → M3: `sdread` 16.75 →
+  17.49 %, `forkexec` 18.02 → 18.91 %, `ext4read` 10.96 → 12.10 %; back end full `sdread` 45.5 → 47.0 %).
+- (*) `ext4read` hides the same loss behind its DTLB walks, which went back from 14.2 to 8.0 per 1000
+  instructions (the swing of 20.1).
+- **Why the simulation showed a gain**: the memory model of SIM_BIOS answers at once, while the DDR3 of the
+  board takes some tens of cycles for every L2 miss. An unused prefetch that misses in the L2 costs little
+  in the simulation and a lot on the board; most of the kernel loads also miss in the I$ more than the boot (19 to
+  61 against 25 per 1000 instructions).
+
+So the next-line prefetch only pays if a demand miss does not have to wait for it: the read side of the bus
+has to take a second read, or let a demand miss go first (the same limit as M0 and section 21). Until then
+the prefetch should be switched off (`IC_PREFETCH = 0`).
