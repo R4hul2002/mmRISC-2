@@ -1001,3 +1001,11 @@ the prefetch is switched off (`IC_PREFETCH = 0`, the default since 2026-10-11; S
 - (*) `gunzip` is the only load outside its range so far (1.250 to 1.263 since section 15), with every one of
   its columns (misses, walks, D$ wait, front end, back end, wrong guesses) the same as in 20.1, so no cause the
   counters can see; `ext4read` and `sdread` move with their DTLB walks, as since section 14.
+
+On the bitstream of TIMING 41 (T4, first step, no change to any cycle count) the loads are the same again
+(`gunzip` 1.268, `md5sum` 1.135, `ls` 2.048, `ext4read` 2.445, `sdread` 2.734, `forkexec` 2.116, `tftp` 2.757),
+except `awk` 1.550 → 1.592 (+2.7 %). That is one disturbed run, not the design: `workload.sh` runs each load
+once per group of events and takes the CPI from runs 1 to 4, and event `rb` (all of MA's waits) is counted in
+two of them. For `awk` the two now disagree (run 2: 6.9 %, run 7: 5.5 %; they agreed within 0.1 before), and
+the other columns of run 2 are up with it (back end 22.0 → 24.8 %); `gunzip`'s run 2 shows the same (7.2 against
+5.9 %). Which of the kernel's activities hits a run is not seen by the counters of the load.

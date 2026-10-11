@@ -1665,3 +1665,28 @@ core is inside the FPU (`c_sig` → `p2_f`, +0.225 ns), at the same slack as Lit
 The 0.1 ns over section 38, with two families taken away, is less than they were worth: the PMP family had
 +0.296 ns in section 38 and takes the head at +0.142 ns here, again by placement (89.6 % of the slices).
 T4 (registering the range compares, or comparing in EX against the DTLB's answer) is the next candidate.
+
+## 41. The NAPOT mask kept in a register (T4, first step): +0.896 ns, the core +0.977 ns (2026-10-11)
+
+Decision 74 of `CPU_CORE_SPEC.md`: `CORE_CSR` keeps `pmpaddr ^ (pmpaddr + 1)` beside each `pmpaddr`, and the
+PMP checkers no longer make it in every cycle. The add was the first 4.7 ns of the worst path of section 40.
+
+| | Section 40 | This version |
+|---|---|---|
+| WNS | +0.142 ns | **+0.896 ns** (the core: **+0.977 ns**) |
+| WHS | +0.033 ns | +0.052 ns |
+| LUT | 46,090 (72.7 %) | 46,455 (73.3 %) |
+| FF | 25,754 (20.3 %) | 26,178 (20.7 %) |
+| Slices | 89.6 % (14,206) | 89.0 % (14,106) |
+
+- **The WNS is no longer the core's**: +0.896 ns is LiteX's reset synchronizer (`FDPE` → `FDPE_1`, no logic,
+  0.98 ns of routing against the `set_max_delay 2` that LiteX puts on `ars_ff1` → `ars_ff2`). It does not move
+  with the core, so from now on the WNS of the report is at most about +0.9 ns, and the margin of the core has
+  to be read from its own paths.
+- **The PMP family is gone** from the top. The worst path of the core, +0.977 ns (20 levels, 75 % routing):
+  the D$'s answer `d_resp_data` → forwarding from MA → EX's address add (6 CARRY4) → DTLB compare → the fault
+  of the translation in `ex_exc` → `fwd_a_mr` (the select of forwarding from MR, through `nx_mr_wr`) and the
+  CE of `mr_exc_cause_r`. That is what is left of the T2 family: `nx_mr_wr` reads `~ex_exc`, though an
+  instruction that writes a register from EX is never a memory access, whose fault is the only thing the
+  DTLB adds; `ex_exc_pre` would do (candidate T6, not needed while the core has a nanosecond).
+- Next: the FPU (`q_sp` → `r_sp`, `p0_c` → `p1_c`) and the I$ (`fill_addr` → its tag RAM), all at +1.233 ns.
