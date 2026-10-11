@@ -1639,3 +1639,29 @@ are due before the next addition.
 
 The prefetch is a loss on the board (`BENCH.md` 21.1); switching it off (`IC_PREFETCH = 0`) also takes its
 logic out of the slices.
+
+## 40. The prefetch off, with T2 and T5: +0.142 ns (2026-10-11)
+
+The I$ prefetch switched off (`IC_PREFETCH = 0`), T2 (a DTLB miss waits in MR, decision 73 of
+`CPU_CORE_SPEC.md`) and T5 (the start of the FPU / MDU, the request to the D$ and the branches without the
+CSR checks, decision 72).
+
+| | Section 38 (M1) | Section 39 (M3) | This version |
+|---|---|---|---|
+| WNS | +0.241 ns | +0.029 ns | **+0.142 ns** |
+| WHS | | +0.015 ns | +0.033 ns |
+| LUT | 45,966 (72.5 %) | 46,667 (73.6 %) | 46,090 (72.7 %) |
+| FF | 25,740 (20.3 %) | 26,300 (20.7 %) | 25,754 (20.3 %) |
+| Slices | 86.5 % (13,716) | 90.5 % (14,350) | 89.6 % (14,206) |
+
+**Both families are gone from the top**: nothing that starts at `ma_is_load` / `ma_mem` (T2, the worst
+family of sections 32 and 36 to 39) or at `ex_csr_addr` (T5, section 38) is among the worst paths of the
+main clock any more. The worst is now the family of T4, as the second one of sections 35 and 38:
+`pmpaddr` → the range compare of the data side's PMP (11 CARRY4) → `mr_pmp_fail` → `lsu_e_go` → the D$'s
+`s1_kill` → its ROB (`rob_data`), 26 levels, 70 % routing, +0.142 ns (all of the first 10 paths). The next of the
+core is inside the FPU (`c_sig` → `p2_f`, +0.225 ns), at the same slack as LiteX's own (the AXI up-converter,
++0.225 ns).
+
+The 0.1 ns over section 38, with two families taken away, is less than they were worth: the PMP family had
++0.296 ns in section 38 and takes the head at +0.142 ns here, again by placement (89.6 % of the slices).
+T4 (registering the range compares, or comparing in EX against the DTLB's answer) is the next candidate.

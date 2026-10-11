@@ -977,3 +977,27 @@ prefetch is a loss.**
 So the next-line prefetch only pays if a demand miss does not have to wait for it: the read side of the bus
 has to take a second read, or let a demand miss go first (the same limit as M0 and section 21). Until then
 the prefetch is switched off (`IC_PREFETCH = 0`, the default since 2026-10-11; SIM_CACHE still tests it on).
+
+### 21.2 The prefetch off, with T2 and T5 (2026-10-11, board)
+
+`workload.sh` on the bitstream of TIMING 40: the prefetch switched off, and T2 / T5 (decisions 72 and 73 of
+`CPU_CORE_SPEC.md`, which change no cycle count in SIM_CORE). Against 20.1 (M1), which it should equal:
+
+| Load | CPI, M1 → this | Change | DTLB walks / 1000 instr. |
+|---|---|---|---|
+| `gunzip` | 1.250 → 1.268 | +1.4 % (*) | 7.92 → 7.93 |
+| `md5sum` | 1.137 → 1.136 | −0.1 % | 0.62 → 0.47 |
+| `awk` | 1.551 → 1.550 | −0.1 % | 13.49 → 14.02 |
+| `ls -lR` | 2.057 → 2.049 | −0.4 % | 10.8 → 11.6 |
+| `ext4read` | 2.503 → 2.455 | −1.9 % | 14.2 → 8.6 |
+| `sdread` | 2.725 → 2.751 | +1.0 % | 8.2 → 9.0 |
+| `forkexec` | 2.123 → 2.118 | −0.2 % | 5.97 → 5.12 |
+| `tftp` | 2.775 → 2.768 | −0.3 % | 15.2 → 13.6 |
+
+- The prefetch is off (events 25 and 26 are 0), and the losses of 21.1 are gone: the I$ fills, the front end
+  and the L2 reads are back at the numbers of 20.1.
+- The DTLB miss now waits in MR instead of EX at the same cost: `awk` (14 walks per 1000 instructions, the
+  most of the user loads) is unchanged, and so is the back end of every load.
+- (*) `gunzip` is the only load outside its range so far (1.250 to 1.263 since section 15), with every one of
+  its columns (misses, walks, D$ wait, front end, back end, wrong guesses) the same as in 20.1, so no cause the
+  counters can see; `ext4read` and `sdread` move with their DTLB walks, as since section 14.
