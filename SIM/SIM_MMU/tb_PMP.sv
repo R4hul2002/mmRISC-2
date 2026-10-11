@@ -33,9 +33,17 @@ module tb_PMP;
     logic                  is_read, is_write, is_exec;
     logic                  fail;
 
+    // what CORE_CSR keeps beside each pmpaddr (pmpmask): made here the way
+    // it makes it, when the register is written
+    logic [64*ENTRIES-1:0] mask;
+    always @(*) begin
+        for (int i = 0; i < ENTRIES; i++)
+            mask[64*i +: 64] = {10'd0, addr[64*i +: 54] ^ (addr[64*i +: 54] + 54'd1)};
+    end
+
     MMU_PMP #(.ENTRIES(ENTRIES)) dut
         (
-            .cfg (cfg), .addr (addr), .priv (priv), .paddr (paddr),
+            .cfg (cfg), .addr (addr), .mask (mask), .priv (priv), .paddr (paddr),
             .size (size), .is_read (is_read), .is_write (is_write),
             .is_exec (is_exec), .fail (fail)
         );

@@ -829,7 +829,7 @@ module CPU_CORE
     logic        st_sum, st_mxr, st_mprv, st_tvm, st_tw, st_tsr;
     logic [1:0]  st_mpp;
     logic [8*PMP_ENTRIES-1:0]  pmpcfg;
-    logic [64*PMP_ENTRIES-1:0] pmpaddr;
+    logic [64*PMP_ENTRIES-1:0] pmpaddr, pmpmask;
 
     // misa : bit 0 is 'A' ... bit 8 is 'I' ... bit 12 is 'M'
     // bit 0 'A', 2 'C', 3 'D', 5 'F', 8 'I', 12 'M', 18 'S', 20 'U'
@@ -938,6 +938,7 @@ module CPU_CORE
             .mstatus_tsr_out  (st_tsr),
             .pmpcfg_out  (pmpcfg),
             .pmpaddr_out (pmpaddr),
+            .pmpmask_out (pmpmask),
             .instret_inc (commit),
             .hpm_ev      (hpm_ev),
             .fflags_we   (fpu_out_valid),
@@ -1082,6 +1083,7 @@ module CPU_CORE
             .mstatus_mpp  (st_mpp),
             .pmpcfg       (pmpcfg),
             .pmpaddr      (pmpaddr),
+            .pmpmask      (pmpmask),
             .i_req        (i_tr_req),
             .i_vaddr      (i_tr_vaddr),
             .i_ready      (i_tr_ready),

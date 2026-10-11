@@ -54,6 +54,7 @@ module CORE_MMU
 
         input  logic [8*(PMP_ENTRIES > 0 ? PMP_ENTRIES : 1)-1:0]  pmpcfg,
         input  logic [64*(PMP_ENTRIES > 0 ? PMP_ENTRIES : 1)-1:0] pmpaddr,
+        input  logic [64*(PMP_ENTRIES > 0 ? PMP_ENTRIES : 1)-1:0] pmpmask,
 
         // instruction side
         input  logic        i_req,          // a fetch would be issued now
@@ -363,6 +364,7 @@ module CORE_MMU
         (
             .cfg      (pmpcfg),
             .addr     (pmpaddr),
+            .mask     (pmpmask),
             .priv     (priv),
             .paddr    (i_chk_paddr),
             .size     (2'd3),            // a fetch brings a whole double word
@@ -376,6 +378,7 @@ module CORE_MMU
         (
             .cfg      (pmpcfg),
             .addr     (pmpaddr),
+            .mask     (pmpmask),
             .priv     (d_priv),
             .paddr    (p_paddr),
             .size     (p_size),
@@ -391,6 +394,7 @@ module CORE_MMU
         (
             .cfg      (pmpcfg),
             .addr     (pmpaddr),
+            .mask     (pmpmask),
             .priv     (ptw_priv),
             .paddr    (ptw_pmp_addr),
             .size     (2'd3),

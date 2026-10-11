@@ -21,7 +21,7 @@ VERILATOR_FLAGS="--binary --timing -j 0 -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC \
 
 # name | file | sed expression
 MUTATIONS=(
-"pmp napot mask off by one|MMU_PMP/MMU_PMP.sv|s|napot_mask = this_a ^ (this_a + 54'd1);|napot_mask = this_a ^ (this_a + 54'd2);|"
+"pmp napot mask from the address itself|MMU_PMP/MMU_PMP.sv|s|napot_mask = mask\[64\*i +: 54\];|napot_mask = this_a;|"
 "pmp napot mask not inverted|MMU_PMP/MMU_PMP.sv|s|((a_up \& ~napot_mask\[53:1\]) == (this_a\[53:1\] \& ~napot_mask\[53:1\]))|((a_up \& napot_mask\[53:1\]) == (this_a\[53:1\] \& napot_mask\[53:1\]))|"
 "pmp TOR top inclusive|MMU_PMP/MMU_PMP.sv|s#below = up_lt | (up_eq \& ~x0 \& t0);#below = up_lt | (up_eq \& (~x0 | t0));#"
 "pmp TOR bottom exclusive|MMU_PMP/MMU_PMP.sv|s#ge_lo = (i == 0) ? 1'b1 : ~lt_lo\[(i+N-1)%N\];#ge_lo = (i == 0) ? 1'b1 : ~lt_lo[(i+N-1)%N] \& ~eq_lo[(i+N-1)%N];#; s#ge_hi = (i == 0) ? 1'b1 : ~lt_hi\[(i+N-1)%N\];#ge_hi = (i == 0) ? 1'b1 : ~lt_hi[(i+N-1)%N] \& ~eq_hi[(i+N-1)%N];#"

@@ -132,6 +132,7 @@ module CORE_CSR
         // PMP configuration, flattened for the checker
         output logic [8*PMP_ENTRIES-1:0]  pmpcfg_out,
         output logic [64*PMP_ENTRIES-1:0] pmpaddr_out,
+        output logic [64*PMP_ENTRIES-1:0] pmpmask_out,   // pmpaddr ^ (pmpaddr + 1)
 
         // counters
         input  logic        instret_inc,
@@ -340,6 +341,12 @@ module CORE_CSR
     //-----------------------------------------------------------------
     logic [7:0]  pmpcfg  [0:(PMP_ENTRIES > 0 ? PMP_ENTRIES-1 : 0)];
     logic [53:0] pmpaddr [0:(PMP_ENTRIES > 0 ? PMP_ENTRIES-1 : 0)];
+    // The bits of a NAPOT region, from the lowest zero of pmpaddr down: a
+    // function of the register alone, so it is worked out when the register
+    // is written instead of in every cycle by the checkers. The add was the
+    // start of the worst path of the design, from pmpaddr through the
+    // checker of the data side into the D$ (LitexSystem/docs/TIMING.md 40).
+    logic [53:0] pmpmask [0:(PMP_ENTRIES > 0 ? PMP_ENTRIES-1 : 0)];
 
     // a locked entry cannot be written any more until the hart is reset
     function automatic logic pmp_locked(input int i);
@@ -349,9 +356,11 @@ module CORE_CSR
     always @(*) begin
         pmpcfg_out  = '0;
         pmpaddr_out = '0;
+        pmpmask_out = '0;
         for (int i = 0; i < PMP_ENTRIES; i++) begin
             pmpcfg_out [8*i  +: 8 ] = pmpcfg[i];
             pmpaddr_out[64*i +: 64] = {10'd0, pmpaddr[i]};
+            pmpmask_out[64*i +: 64] = {10'd0, pmpmask[i]};
         end
     end
 
@@ -814,6 +823,7 @@ module CORE_CSR
             for (int i = 0; i < PMP_ENTRIES; i++) begin
                 pmpcfg[i]  <= 8'd0;
                 pmpaddr[i] <= 54'd0;
+                pmpmask[i] <= 54'd1;
             end
         end else begin
             if (!inhibit_cy && !cy_filt)                mcycle   <= mcycle + 64'd1;
@@ -914,8 +924,10 @@ module CORE_CSR
                     if (!pmp_locked(wr_addr_idx) &&
                         !((wr_addr_idx < PMP_ENTRIES-1) &&
                           pmp_locked(wr_addr_idx + 1) &&
-                          (pmpcfg[wr_addr_idx + 1][4:3] == 2'b01)))
+                          (pmpcfg[wr_addr_idx + 1][4:3] == 2'b01))) begin
                         pmpaddr[wr_addr_idx] <= wr_data[53:0];
+                        pmpmask[wr_addr_idx] <= wr_data[53:0] ^ (wr_data[53:0] + 54'd1);
+                    end
                 end else begin
                 case (wr_addr)
                     CSR_FFLAGS: begin

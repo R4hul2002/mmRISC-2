@@ -40,6 +40,8 @@ module MMU_PMP
     (
         input  logic [8*(ENTRIES > 0 ? ENTRIES : 1)-1:0]  cfg,
         input  logic [64*(ENTRIES > 0 ? ENTRIES : 1)-1:0] addr,
+        // addr ^ (addr + 1) of each entry, which CORE_CSR keeps beside it
+        input  logic [64*(ENTRIES > 0 ? ENTRIES : 1)-1:0] mask,
 
         input  logic [1:0]  priv,           // privilege of the access (MPRV
                                             // already taken into account)
@@ -93,7 +95,9 @@ module MMU_PMP
     //              pmpaddr downwards are the ones inside the region, and
     //              an entry of all ones matches the whole address space.
     //              Its bit 0 is always set (the smallest region is eight
-    //              bytes), so both ends give the same answer.
+    //              bytes), so both ends give the same answer. It is made
+    //              when the entry is written (mask): the add that makes it
+    //              was the first half of the longest path of the design.
     //-----------------------------------------------------------------
     function automatic logic below(input logic up_lt, input logic up_eq,
                                    input logic x0,    input logic t0);
@@ -107,7 +111,7 @@ module MMU_PMP
         for (int i = 0; i < N; i++) begin
             logic [53:0] this_a, napot_mask;
             this_a     = addr[64*i +: 54];
-            napot_mask = this_a ^ (this_a + 54'd1);
+            napot_mask = mask[64*i +: 54];
             up_lt[i] = (a_up < this_a[53:1]);
             up_eq[i] = (a_up == this_a[53:1]);
             napot[i] = ((a_up & ~napot_mask[53:1]) == (this_a[53:1] & ~napot_mask[53:1]));

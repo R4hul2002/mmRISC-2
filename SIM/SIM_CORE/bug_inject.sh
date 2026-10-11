@@ -265,6 +265,8 @@ MUTATIONS=(
 "364#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/lsu_idle \& ~(mr_valid \& mr_mem \& ~mr_tlb_wait)/lsu_idle \& ~(mr_valid \& mr_mem)/#core (T2): the walker waits for the access that waits for it"
 "365#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/if (d_tr_fault != 2'd0) begin/if (1'b0) begin/#core (T2): the fault a walk for MR left behind is not taken"
 "366#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)/? (mr_is_load ? EXC_LPAGE : EXC_SPAGE)/#core (T2): an AMO's page fault found in MR is a load page fault"
+"367#CPU_CORE/CORE_CSR/CORE_CSR.sv#s/pmpmask\[wr_addr_idx\] <= wr_data\[53:0\] ^ (wr_data\[53:0\] + 54'd1);/pmpmask[wr_addr_idx] <= wr_data[53:0] ^ (wr_data[53:0] + 54'd2);/#CSR (T4): the NAPOT mask kept for pmpaddr is off by one"
+"368#CPU_CORE/CORE_CSR/CORE_CSR.sv#s/pmpmask\[wr_addr_idx\] <= wr_data\[53:0\] ^ (wr_data\[53:0\] + 54'd1);/pmpmask[wr_addr_idx] <= pmpmask[wr_addr_idx];/#CSR (T4): the NAPOT mask is not written with pmpaddr"
 "338#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign hpm_ev\[2\]  = commit;%assign hpm_ev[2]  = commit | trap_en;%#PMU: a trap counted as a retired instruction (t32)"
 "339#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%if (!inhibit_cy \&\& !cy_filt) %if (!inhibit_cy) %#Smcntrpmf: mcyclecfg does not stop mcycle (t32)"
 "340#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%assign ir_filt = (priv_r == PRIV_M) ? ir_minh : (priv_r == PRIV_S) ? ir_sinh : ir_uinh;%assign ir_filt = (priv_r == PRIV_M) ? ir_minh : (priv_r == PRIV_S) ? ir_sinh : 1'b0;%#Smcntrpmf: UINH of minstretcfg ignored (t32)"

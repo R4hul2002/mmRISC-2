@@ -213,6 +213,46 @@ back_in_m:
     TEST_EQ_REG(21, x22, x21)
 
     //-----------------------------------------------------------------
+    // the smallest NAPOT region, eight bytes: pmpaddr is even, and the
+    // region is only the bit below its lowest zero (CORE_CSR keeps that
+    // mask beside pmpaddr). Entry 0 made read only over one double word,
+    // checked through MPRV as S; the double word behind it is entry 2's.
+    //-----------------------------------------------------------------
+    la   x15, prot_data
+    addi x15, x15, 80                    // outside entry 1, 16 byte aligned
+    srli x10, x15, 2
+    csrw pmpaddr0, x10
+    li   x13, (PMP_NAPOT | PMP_R)                                          \
+            | (((PMP_NAPOT | PMP_R) | PMP_L) << 8)                         \
+            | ((PMP_NAPOT | PMP_R | PMP_W | PMP_X) << 16)
+    csrw pmpcfg0, x13
+    li   t0, 3 << 11
+    csrc mstatus, t0
+    li   t0, (1 << 11) | (1 << 17)       // MPP = S and MPRV
+    csrs mstatus, t0
+    li   x29, 0
+    sd   x13, 0(x15)                     // inside : read only
+    TEST_EQ(35, x29, 1)
+    TEST_EQ(36, x28, 7)
+    li   x29, 0
+    sd   x13, 8(x15)                     // the double word behind it
+    TEST_EQ(37, x29, 0)
+    li   x29, 0
+    sd   x13, -8(x15)                    // and the one in front of it
+    TEST_EQ(38, x29, 0)
+    li   t0, 1 << 17
+    csrc mstatus, t0
+    // entry 0 back to what the rest of the test expects
+    la   x10, no_x_code
+    srli x10, x10, 2
+    ori  x10, x10, 0xF
+    csrw pmpaddr0, x10
+    li   x13, (PMP_NAPOT | PMP_R | PMP_W)                                  \
+            | (((PMP_NAPOT | PMP_R) | PMP_L) << 8)                         \
+            | ((PMP_NAPOT | PMP_R | PMP_W | PMP_X) << 16)
+    csrw pmpcfg0, x13
+
+    //-----------------------------------------------------------------
     // the entries this core does not check still have to answer
     //
     //   The privileged specification lets an implementation provide zero,
