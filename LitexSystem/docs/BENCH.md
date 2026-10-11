@@ -976,4 +976,4 @@ prefetch is a loss.**
 
 So the next-line prefetch only pays if a demand miss does not have to wait for it: the read side of the bus
 has to take a second read, or let a demand miss go first (the same limit as M0 and section 21). Until then
-the prefetch should be switched off (`IC_PREFETCH = 0`).
+the prefetch is switched off (`IC_PREFETCH = 0`, the default since 2026-10-11; SIM_CACHE still tests it on).

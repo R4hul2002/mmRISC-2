@@ -45,7 +45,7 @@ module ICACHE
         parameter int          BLOCK_BYTES = 64,
         parameter int          FETCH_WIDTH = 64,
         parameter int          REPLACE_RANDOM = 0,
-        parameter int          PREFETCH       = 1,
+        parameter int          PREFETCH       = 0,
         parameter int          AXI4_ID_WIDTH  = 4,
         parameter logic [3:0]  AXI4_ID        = 4'd2
     )

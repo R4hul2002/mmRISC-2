@@ -39,6 +39,7 @@ CONFIGS=(
 "16#small D\$ (16 sets x 1 way x 16B)#-GDC_SETS=16 -GDC_WAYS=1 -GDC_BLOCK=16"
 "17#large D\$ (256 sets x 8 ways x 16B = 32KiB)#-GDC_SETS=256 -GDC_WAYS=8 -GDC_BLOCK=16 -GMEM_WORDS=262144"
 "18#asymmetric I\$ / D\$#-GIC_SETS=32 -GIC_WAYS=2 -GIC_BLOCK=32 -GDC_SETS=128 -GDC_BLOCK=32"
+"19#I\$ without the next-line prefetch (the default of CPU_CACHE)#-GIC_PREFETCH=0"
 )
 
 run_one() {

@@ -25,7 +25,7 @@ module CPU_CACHE
         parameter int          IC_WAYS        = 4,
         parameter int          IC_BLOCK_BYTES = 64,
         parameter int          FETCH_WIDTH    = 64,
-        parameter int          IC_PREFETCH    = 1,      // next-line prefetch of the I$
+        parameter int          IC_PREFETCH    = 0,      // next-line prefetch of the I$ (a loss on the board, BENCH 21.1)
 
         parameter int          DC_SETS        = 64,
         parameter int          DC_WAYS        = 4,

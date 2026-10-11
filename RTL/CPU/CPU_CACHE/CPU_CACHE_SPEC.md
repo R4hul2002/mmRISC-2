@@ -125,7 +125,7 @@ value changes, and synthesizes to the same thing.
 | `BLOCK_BYTES` | 64 | Block size (power of 2, 8 or more) |
 | `FETCH_WIDTH` | 64 | Fetch width returned to the CPU (bits). Extracting RV64GC's compressed instructions is the CPU's job |
 | `AXI4_ID` | 2 | AXI ID used for fills |
-| `PREFETCH` | 1 | Next-line prefetch (4.2). `IC_PREFETCH` of `CPU_CACHE` |
+| `PREFETCH` | 0 | Next-line prefetch (4.2), 1 = on. `IC_PREFETCH` of `CPU_CACHE` |
 
 The default is 64 × 4 × 64B = **16 KiB** (the same as Rocket `linux`).
 
@@ -217,7 +217,9 @@ automatically.
    outside WFI goes down by 1.1 % (`LitexSystem/docs/BENCH.md` 21); the prefetches that are not used hold the
    bus for a miss behind them, which eats more than half of what the others save. Prefetching only after
    a miss that continues a sequence was evaluated and is not better (the same 47 % used, half the
-   prefetches).
+   prefetches). **Off by default** (`PREFETCH = 0`, since 2026-10-11): on the board the kernel loads got 0 to
+   4 % slower (`LitexSystem/docs/BENCH.md` 21.1), the misses left waiting for unused prefetches that the DDR3
+   makes long. It is kept, and tested in SIM_CACHE, for when the bus takes a second read.
 
 ### 4.3 Writes (D$, write-back + write-allocate)
 
@@ -829,7 +831,7 @@ if it wants dirty lines written back before a reset.
 | `make perf` | Throughput of consecutive hits / consecutive misses (8.4) |
 | `make wave-perf` | The same as 4 VCDs + GTKWave formats (8.4) |
 | `make lint` | Verilator lint |
-| `./sweep.sh` | Runs 18 parameter configurations in parallel |
+| `./sweep.sh` | Runs 19 parameter configurations in parallel |
 | `./bug_inject.sh` | Injects 18 bugs one at a time and checks that they are detected |
 
 `make run PLUSARGS="+from=4 +to=6"` narrows the sections. `+ops=<n>` changes the number of random
@@ -881,6 +883,7 @@ MSHR conflicts really happen.
 | C7 | Block 16B | C16 | Small D$ (16 sets × 1 way × 16B) |
 | C8 | Block 32B | C17 | Large D$ (256 sets × 8 ways × 128B) |
 | C9 | Block 128B | C18 | Different configurations for the I$ and D$ |
+| | | C19 | The I$ without the prefetch (the default of `CPU_CACHE`; the others test with it on) |
 
 - 18 bug injections: **all detected** (`bug_inject.sh`)
 - 2026-09-24, section 16 (order with the write-back queue) added: default configuration **PASS** (9381
