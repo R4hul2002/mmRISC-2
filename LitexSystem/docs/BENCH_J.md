@@ -1077,3 +1077,29 @@ libelf つきの `perf`(D2)。22.1 章との比較:
 `next_uptodate_folio` 3.4 %、`folio_add_file_rmap_ptes` 2.8 %、`handle_page_fault` 1.9 %、`filemap_map_pages` 1.9 %、
 …、`clear_page` 1.3 %(いまは `cbo.zero`)、`crc32c` 0.7 %(F3 なら Zbc で行う)。BusyBox はストリップされている
 のでアドレスだけ。このビットストリームの CoreMark: CPI 1.123(13 章は 1.134)。
+
+## 24. 負荷がサイクルを使う関数(2026-10-12、実機)
+
+`sh workload.sh <サーバ> profile`(libelf つきの perf、23 章): 各負荷を 1 回ずつサンプル(r1 で 100,000 サイクル
+ごと)。BusyBox はストリップされているので、ユーザモードの負荷(`gunzip`、`awk`、`md5sum` 自身の部分)は
+アドレスだけ。
+
+| 負荷 | 上位の関数(その負荷のサンプルに対する %) |
+|---|---|
+| `md5sum` | カーネルのユーザ空間へのコピー 7.4 %、その後 BusyBox の MD5 |
+| `ls -lR` | **`crc32c` 5.0 %**(と `ext4_inode_csum` 0.6 %: ext4 はディレクトリのブロックと inode のチェックサムを調べる)、`link_path_walk` 3.9 %、`kmem_cache_free` 3.3 % |
+| `ext4read` | `queue_work_on` 17.5 % (*)、SD カードのドライバ(`litex_mmc_send_cmd` 3.4 %、`litex_mmc_request` 2.5 %)、`memcpy_fromio` 1.1 % |
+| `sdread` | **カーネルのユーザ空間へのコピー 22.3 %**、`queue_work_on` 11.8 % (*) |
+| `forkexec` | `memcpy` 4.6 %、`next_uptodate_folio` 2.9 %、…、`clear_page` 1.2 %、`crc32c` 0.4 % |
+| `tftp` | **`liteeth_start_xmit` 9.8 %**(パケットを 1 つずつ `memcpy_toio` で LiteEth の SRAM に写す。キャッシュ無し)、ユーザ空間へのコピー 4.7 %、`do_csum` 2.0 %(IP のチェックサム) |
+
+- (*) サンプルはオーバーフロー割り込みで取り、割り込みが止まっている間は待たされる。割り込みを戻す命令
+  (`queue_work_on`、`_raw_spin_unlock_irq(restore)`、`finish_task_switch`)に落ちる。これらの関数は、その前に
+  割り込みを止めていた時間を表していて、関数そのものの時間ではない。
+- ユーザ空間へのコピーは `fallback_scalar_usercopy_sum_enabled`(`arch/riscv/lib/uaccess.S`、ベクタ拡張の無いときに
+  カーネルが使うスカラのコピーのループ)。
+- **Zbc(F3)** が速くするのは `crc32c`(Zbc があるとカーネルは `clmul` で計算する、`lib/crc/riscv`): `ls` の 5 %、
+  ほかは 0.5 % 未満。`tftp` の `do_csum` は CRC ではない。
+- **代わりにもっと大きな的が見えた**: ユーザ空間へのコピー(`sdread` の 22 %、`md5sum` の 7 %、`tftp` の 5 %。
+  `forkexec` の `memcpy` 4.6 %)では、コピー先のラインがどれもまず L2 かメモリから読まれてから上書きされる。
+  ドライバのキャッシュ無しの書き込み(`tftp` の `liteeth_start_xmit` 10 %)では、1 回ずつ周辺バスの答えを待つ。

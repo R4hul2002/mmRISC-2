@@ -1114,3 +1114,29 @@ change since).
 `next_uptodate_folio` 3.4 %, `folio_add_file_rmap_ptes` 2.8 %, `handle_page_fault` 1.9 %, `filemap_map_pages`
 1.9 %, ..., `clear_page` 1.3 % (now with `cbo.zero`), `crc32c` 0.7 % (F3 would do it with Zbc). BusyBox shows
 addresses only: it is stripped. CoreMark on this bitstream: CPI 1.123 (1.134 in section 13).
+
+## 24. Where the loads spend their cycles, by function (2026-10-12, board)
+
+`sh workload.sh <server> profile` (perf with libelf, section 23): each load sampled once (r1 every 100,000
+cycles). BusyBox is stripped, so the user-mode loads (`gunzip`, `awk`, `md5sum`'s own part) show addresses only.
+
+| Load | First functions (% of its samples) |
+|---|---|
+| `md5sum` | the kernel's copy to user space 7.4 %, then BusyBox's MD5 |
+| `ls -lR` | **`crc32c` 5.0 %** (and `ext4_inode_csum` 0.6 %: ext4 checks the checksums of its directory blocks and inodes), `link_path_walk` 3.9 %, `kmem_cache_free` 3.3 % |
+| `ext4read` | `queue_work_on` 17.5 % (*), the SD card driver (`litex_mmc_send_cmd` 3.4 %, `litex_mmc_request` 2.5 %), `memcpy_fromio` 1.1 % |
+| `sdread` | **the kernel's copy to user space 22.3 %**, `queue_work_on` 11.8 % (*) |
+| `forkexec` | `memcpy` 4.6 %, `next_uptodate_folio` 2.9 %, ..., `clear_page` 1.2 %, `crc32c` 0.4 % |
+| `tftp` | **`liteeth_start_xmit` 9.8 %** (it copies each packet into the SRAM of LiteEth with `memcpy_toio`, uncached), the copy to user space 4.7 %, `do_csum` 2.0 % (the IP checksum) |
+
+- (*) Samples are taken by the overflow interrupt, which waits while interrupts are off; they land on the
+  instruction that turns them back on (`queue_work_on`, `_raw_spin_unlock_irq(restore)`, `finish_task_switch`).
+  These functions stand for the time spent with interrupts off before them, not for themselves.
+- The copy to user space is `fallback_scalar_usercopy_sum_enabled` (`arch/riscv/lib/uaccess.S`, the scalar copy
+  loop the kernel takes without the vector extension).
+- **Zbc (F3)** would speed `crc32c` up (the kernel computes it with `clmul` when it has Zbc,
+  `lib/crc/riscv`): 5 % of `ls`, under 0.5 % of the others. `do_csum` of `tftp` is not a CRC.
+- **Larger targets** show up instead: the copy to user space (22 % of `sdread`, 7 % of `md5sum`, 5 % of `tftp`;
+  `memcpy` 4.6 % of `forkexec`), where every line of the destination is read from the L2 or memory first and
+  then overwritten, and the uncached writes of the drivers (`liteeth_start_xmit` 10 % of `tftp`), each of which
+  waits for the answer of the peripheral bus.
