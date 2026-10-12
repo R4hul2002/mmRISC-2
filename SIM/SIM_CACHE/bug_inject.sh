@@ -45,7 +45,7 @@ MUTATIONS=(
 "25#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/if (sw_pend \&\& !sw_wait_wb) begin/if (sw_pend) begin/#16#16#D\$: a write through overtakes the writeback of its line"
 "26#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/                    sw_rob  <= s1_rob;/                    sw_rob  <= s1_rob; rob_wait[s1_rob] <= 1'b1;/#16#16#D\$: a fill answers a write through that is still on the bus"
 "27#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/if (array_rd_busy || fl_busy || (fill_beat_now/if (array_rd_busy || (fill_beat_now/#17#17#D\$: a request held during the flush walk looks at the tags of other sets"
-"28#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/(tfwd_en   \&\& (tfwd_index == addr_index(s1_addr))) ||/1'b0 ||/; s/(fwd_valid \&\& (fwd_addr\[DADDR_BITS-1 -: IDX_BITS\] == addr_index(s1_addr))))/1'b0)/#17#18#D\$: a held request forgets the writes forwarded to it (a store hit writes tag and data together, so the two conditions are one)"
+"28#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/(tfwd_en   \&\& (tfwd_index == addr_index(s1_addr))) ||/1'b0 ||/; s/(fwd_valid \&\& !fwd_own \&\& (fwd_addr\[DADDR_BITS-1 -: IDX_BITS\] == addr_index(s1_addr))))/1'b0)/#17#18#D\$: a held request forgets the writes forwarded to it (a store hit writes tag and data together, so the two conditions are one)"
 "29#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/s1_fast      = (s1_rob == rob_head) \&\& !s1_kill;/s1_fast      = !s1_kill;/#1#18#D\$: a hit answers from stage 1 even when an older request is still waiting"
 "30#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/s1_fast_data = s1_is_sc ? (sc_ok ? 64'd0 : 64'd1)/s1_fast_data = s1_is_sc ? (sc_ok ? 64'd1 : 64'd0)/#1#18#D\$: an SC answered from stage 1 reports the opposite"
 "31#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/? extract(hit_word, s1_addr\[2:0\], s1_size) : 64'd0;/? hit_word : 64'd0;/#1#18#D\$: a load answered from stage 1 is not shifted to its byte"
@@ -61,8 +61,8 @@ MUTATIONS=(
 "41#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/                            c_state   <= C_READ;/                            c_state   <= C_IDLE;/#3#3#D\$ (M5): the dirty victim of a fill is never copied out"
 "42#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/                            f_wb_way  <= ms_way\[ms_head\];/                            f_wb_way  <= '0;/#3#3#D\$ (M5): the victim is copied from way 0"
 "43#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/                            ms_st_strb\[ms_match_id\]\[addr_woff(s1_addr)\] | size_strb(s1_addr\[2:0\], s1_size);/                            size_strb(s1_addr[2:0], s1_size);/#11#17#D\$ (M1): a store joining a fill forgets the bytes stored before it in the word"
-"44#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/rob_data\[i\] <= extract(merge_bytes(m_axi4_rdata, ms_st_data\[ms_head\]\[f_beat\],/rob_data[i] <= extract(merge_bytes(m_axi4_rdata, 64'd0,/#11#17#D\$ (M1): a load joining a fill does not see the stores before it"
-"45#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/                            !(s1_is_store \&\& ms_ld_same_word);/                            1'b1;/#11#17#D\$ (M1): a store joins behind a load of its word, which then sees it"
+"44#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/rob_data\[i\] <= extract(merge_bytes(f_rdata, ms_st_data\[ms_head\]\[f_beat\],/rob_data[i] <= extract(merge_bytes(f_rdata, 64'd0,/#11#17#D\$ (M1): a load joining a fill does not see the stores before it"
+"45#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/                            !(s1_is_store \&\& ms_ld_same_word) \&\& !s1_is_zero;/                            1'b1 \&\& !s1_is_zero;/#11#17#D\$ (M1): a store joins behind a load of its word, which then sees it"
 "46#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/? size_strb(s1_addr\[2:0\], s1_size) : 8'h00;/? size_strb(s1_addr[2:0], s1_size) : ms_st_strb[ms_tail][w];/#11#17#D\$ (M1): a new fill keeps the stores of the last one of its MSHR"
 "47#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/assign s1_st_ack = ({s1_line, {OFF_BITS{1'b0}}} < PADDR_WIDTH'(STORE_ACK_LIMIT));/assign s1_st_ack = 1'b1;/#8#8#D\$ (M1): a store miss that can get a bus error is answered at once, the error is lost"
 "48#CPU/CPU_CACHE/ICACHE/ICACHE.sv#s/                else         pf_valid <= 1'b0;/                else         pf_valid <= pf_valid;/#20#20#I\$ (M3): fence.i leaves a complete prefetch buffer valid"
@@ -74,6 +74,10 @@ MUTATIONS=(
 "54#CPU/CPU_CACHE/ICACHE/ICACHE.sv#s/assign m_axi4_rready  = (state == S_FILL) || pf_busy;/assign m_axi4_rready  = (state == S_FILL);/#10#20#I\$ (M3): the beats of a prefetch are not taken"
 "55#BUS/BUS_ARB/BUS_ARB.sv#s/assign x4r_now1 = (FAST_READ != 0) \& ~x4r_act \& ~s0_axi4_arvalid \& s1_axi4_arvalid;/assign x4r_now1 = (FAST_READ != 0) \& ~x4r_act \& s1_axi4_arvalid;/#10#20#bus (FAST_READ): the I$ is let through with the D$ when both ask at once"
 "56#BUS/BUS_ARB/BUS_ARB.sv#s/assign x4r_sel1 = (FAST_READ != 0) ? x4r_s1 : x4r_g1;/assign x4r_sel1 = x4r_g1;/#10#20#bus (FAST_READ): the address of the last grant goes out with a new one"
+"57#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/m_axi4_arvalid <= !ms_zero\[ms_head\];/m_axi4_arvalid <= 1'b1;/; s/f_state        <= ms_zero\[ms_head\] ? F_DATA : F_AR;/f_state        <= F_AR;/#21#21#D\$ (Zicboz): a cbo.zero miss reads its line from memory all the same"
+"58#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/end else if (s1_store_hit_nk || (s1_zero_wr \&\& s1_zero_last)) begin/end else if (s1_store_hit_nk) begin/#21#21#D\$ (Zicboz): a cbo.zero hit does not make the line dirty"
+"59#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/!(s1_is_store \&\& ms_ld_same_word) \&\& !s1_is_zero;/!(s1_is_store \&\& ms_ld_same_word);/#21#21#D\$ (Zicboz): a cbo.zero joins a fill under way as if it were a store"
+"60#CPU/CPU_CACHE/DCACHE/DCACHE.sv#s/assign s1_zero_last = (s1_zw == WOFF_BITS'(WORDS_PER_BLOCK-1));/assign s1_zero_last = (s1_zw == WOFF_BITS'(WORDS_PER_BLOCK-2));/#21#21#D\$ (Zicboz): a cbo.zero hit leaves the last word of the line"
 )
 
 # Not listed, equivalent to the design:

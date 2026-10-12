@@ -214,7 +214,7 @@
                     a = a_mem(200 + c + 16 * k) + ((k == 1) ? PADDR_WIDTH'(4) : PADDR_WIDTH'(0));
                     d_store($sformatf("amo init cmd%0d size%0d", c, size), a, 2'(size),
                             64'h0000_0000_8000_0000);
-                    d_push($sformatf("amo cmd%0d size%0d", c, size), 4'(c), a, 2'(size),
+                    d_push($sformatf("amo cmd%0d size%0d", c, size), 5'(c), a, 2'(size),
                            64'h0000_0000_7FFF_FFFF);
                     d_load($sformatf("amo result cmd%0d size%0d", c, size), a, 2'(size));
                     if (size == 2)
@@ -226,7 +226,7 @@
             // signed / unsigned boundaries for min/max
             for (int c = 9; c <= 12; c++) begin
                 d_store("amo bound init", a_mem(240 + c), 2'd3, 64'hFFFF_FFFF_FFFF_FFFF);
-                d_push ($sformatf("amo bound cmd%0d", c), 4'(c), a_mem(240 + c), 2'd3, 64'd1);
+                d_push ($sformatf("amo bound cmd%0d", c), 5'(c), a_mem(240 + c), 2'd3, 64'd1);
                 d_load ($sformatf("amo bound result cmd%0d", c), a_mem(240 + c), 2'd3);
             end
             d_drain();
@@ -470,7 +470,7 @@
                 end else if (r < 72) begin
                     // aligned atomics only
                     a = a_mem(widx);
-                    d_push($sformatf("random AMO @%010h", a), 4'($urandom_range(4, 12)), a, 2'd3, {$urandom, $urandom});
+                    d_push($sformatf("random AMO @%010h", a), 5'($urandom_range(4, 12)), a, 2'd3, {$urandom, $urandom});
                 end else if (r < 76) begin
                     a = a_mem(widx);
                     d_push($sformatf("random LR @%010h", a), CMD_LR, a, 2'd3, 64'd0);
@@ -488,8 +488,11 @@
                     i_push("random fetch", a_mem($urandom_range(1024, 1279)));
                 end else if (r < 96) begin
                     i_push("random fetch (other window)", a_mem($urandom_range(1280, 1535)));
-                end else if (r < 98) begin
+                end else if (r < 97) begin
                     d_fence("random fence");
+                end else if (r < 98) begin
+                    // cbo.zero, at any address of the block
+                    d_zero($sformatf("random cbo.zero @%010h", a), a);
                 end else begin
                     d_drain();
                     i_drain();
@@ -914,7 +917,7 @@
                             d_store($sformatf("mixed CPU store @%010h sz%0d", a, sz), a, 2'(sz),
                                     {$urandom, $urandom});
                         end else if (r < 82) begin
-                            d_push($sformatf("mixed CPU AMO @%010h", a_mem(w)), 4'($urandom_range(4, 12)),
+                            d_push($sformatf("mixed CPU AMO @%010h", a_mem(w)), 5'($urandom_range(4, 12)),
                                    a_mem(w), 2'($urandom_range(2, 3)), {$urandom, $urandom});
                         end else if (r < 88) begin
                             d_push($sformatf("mixed CPU LR @%010h", a_mem(w)), CMD_LR, a_mem(w), 2'd3, 64'd0);
@@ -922,6 +925,7 @@
                             d_push($sformatf("mixed CPU SC @%010h", a_mem(w)), CMD_SC, a_mem(w), 2'd3,
                                    {$urandom, $urandom});
                         end else if (r < 98) begin
+                            // (no cbo.zero here: it writes the DMA's words too)
                             d_fence("mixed CPU fence");
                         end else begin
                             d_flush("mixed CPU flush");
@@ -1273,6 +1277,90 @@
 
         //=============================================================
         // Throughput patterns (only with +perf, see tb_CACHE_perf.svh)
+        //=============================================================
+        section("21. cbo.zero (Zicboz)");
+        //=============================================================
+        //   (a) a clean line in the cache, (b) a dirty one, (c) a line
+        //   not in the cache whose victim is dirty: no line read on the
+        //   bus, the victim written back; (d) a store right behind it
+        //   joins it; (e) behind a store miss of the same line (waits for
+        //   its fill, then zeroes it as a hit); (f) an address in the
+        //   middle of the block; (g) uncached: an error; (h) it ends a
+        //   reservation of the line
+        if (from_sec <= 21 && 21 <= to_sec) begin
+            int lw, ar0, base;
+            e0   = n_error;
+            lw   = DC_BLOCK / 8;
+            base = 2048;                              // words of the window
+            // (a)
+            for (int w = 0; w < lw; w++)
+                d_store("(a) line A", a_mem(base + w), 2'd3, 64'hA0A0_0000_0000_0000 | 64'(w));
+            d_flush("(a) clean");
+            d_drain();
+            d_load("(a) line A in the cache", a_mem(base), 2'd3);
+            d_drain();
+            d_zero("(a) cbo.zero, clean hit", a_mem(base));
+            for (int w = 0; w < lw; w++) d_load("(a) zero", a_mem(base + w), 2'd3);
+            d_load("(a) the next line untouched", a_mem(base + lw), 2'd3);
+            // (b)
+            d_store("(b) line B dirty", a_mem(base + 2 * lw + 3), 2'd3, 64'hB0B0);
+            d_zero("(b) cbo.zero, dirty hit", a_mem(base + 2 * lw));
+            for (int w = 0; w < lw; w++) d_load("(b) zero", a_mem(base + 2 * lw + w), 2'd3);
+            // (c) the set of line C full of dirty lines, then C
+            d_drain();
+            for (int k = 0; k < DC_WAYS; k++)
+                d_store("(c) a dirty line of the set", a_mem(base + 4 * lw + k * DC_SETS * lw), 2'd3,
+                        64'hC0C0_0000_0000_0000 | 64'(k));
+            d_fence("(c) their fills done");         // stores are answered before
+            d_drain();
+            ar0 = n_dc_ar;
+            d_zero("(c) cbo.zero, miss with a dirty victim", a_mem(base + 4 * lw + DC_WAYS * DC_SETS * lw + 5));
+            d_drain();
+            repeat (40) @(posedge clk);
+            check("(c) no line read on the bus", n_dc_ar == ar0);
+            for (int w = 0; w < lw; w++)
+                d_load("(c) zero", a_mem(base + 4 * lw + DC_WAYS * DC_SETS * lw + w), 2'd3);
+            // (d)
+            d_zero("(d) cbo.zero of a missing line", a_mem(base + 6 * lw + (DC_WAYS + 1) * DC_SETS * lw));
+            d_store("(d) a store right behind it", a_mem(base + 6 * lw + (DC_WAYS + 1) * DC_SETS * lw + 2),
+                    2'd2, 64'h1234_5678);
+            for (int w = 0; w < lw; w++)
+                d_load("(d) zero and the store", a_mem(base + 6 * lw + (DC_WAYS + 1) * DC_SETS * lw + w), 2'd3);
+            // (e)
+            d_drain();
+            d_store("(e) a store miss", a_mem(base + 8 * lw + 1), 2'd3, 64'hE0E0);
+            d_zero("(e) cbo.zero of its line", a_mem(base + 8 * lw + 4));
+            d_store("(e) a store after it", a_mem(base + 8 * lw + 7), 2'd3, 64'hE1E1);
+            for (int w = 0; w < lw; w++) d_load("(e) zero and the last store", a_mem(base + 8 * lw + w), 2'd3);
+            // (f)
+            d_store("(f) line F", a_mem(base + 10 * lw + lw - 1), 2'd3, 64'hF0F0);
+            d_zero("(f) cbo.zero at an odd byte of the block", a_mem(base + 10 * lw + 2) + PADDR_WIDTH'(3));
+            for (int w = 0; w < lw; w++) d_load("(f) zero", a_mem(base + 10 * lw + w), 2'd3);
+            // (g)
+            d_zero("(g) cbo.zero uncached: error", a_peri(8));
+            // (h)
+            d_push("(h) LR", CMD_LR, a_mem(base + 12 * lw), 2'd3, 64'd0);
+            d_zero("(h) cbo.zero of the line", a_mem(base + 12 * lw + 1));
+            d_push("(h) SC fails", CMD_SC, a_mem(base + 12 * lw), 2'd3, 64'd7);
+            d_drain();
+            // (j) the DMA port reads a line a cbo.zero allocates, right
+            //     behind it (the zero fill may still be on its way), and
+            //     (k) writes into a zeroed line, which the CPU then reads
+            d_store("(j) line J dirty", a_mem(base + 14 * lw + 1), 2'd3, 64'h5151);
+            d_flush("(j) out");
+            d_drain();
+            d_zero("(j) cbo.zero of line J (a miss)", a_mem(base + 14 * lw));
+            d_drain();                               // answered when taken
+            for (int w = 0; w < lw; w++) dbg_load("(j) DMA read of the zeroed line", a_mem(base + 14 * lw + w), 2'd3);
+            dbg_store("(k) DMA write into it", a_mem(base + 14 * lw + 3), 2'd3, 64'hD3A3);
+            d_drain();
+            for (int w = 0; w < lw; w++) d_load("(k) the CPU sees zero and the DMA's word", a_mem(base + 14 * lw + w), 2'd3);
+            d_flush("(i) to memory");
+            d_drain();
+            check_memory("(i) memory image after cbo.zero");
+            if (n_error == e0) ok("cbo.zero: hit, dirty hit, miss without a read, joins, waits");
+        end
+
         //=============================================================
         if ($test$plusargs("perf")) perf_run();
 

@@ -43,7 +43,7 @@ module CORE_LSU
 
         // from EX : the address has just been added up
         input  logic                    e_valid,
-        input  logic [3:0]              e_cmd,         // command of the cache port
+        input  logic [4:0]              e_cmd,         // command of the cache port
         input  logic [63:0]             e_addr,
         input  logic [1:0]              e_size,        // 0:byte 1:half 2:word 3:double
         input  logic [63:0]             e_wdata,
@@ -55,7 +55,7 @@ module CORE_LSU
 
         // from MA : an access that has not gone yet (takes precedence)
         input  logic                    m_valid,
-        input  logic [3:0]              m_cmd,
+        input  logic [4:0]              m_cmd,
         input  logic [63:0]             m_addr,
         input  logic [63:0]             m_paddr,
         input  logic [1:0]              m_size,
@@ -83,7 +83,7 @@ module CORE_LSU
         output logic [PADDR_WIDTH-1:0]  d_req_addr,
         output logic [PADDR_WIDTH-1:0]  d_req_paddr,
         output logic [1:0]              d_req_size,
-        output logic [3:0]              d_req_cmd,
+        output logic [4:0]              d_req_cmd,
         output logic [63:0]             d_req_wdata,
         output logic                    d_req_cancel,
         input  logic                    d_resp_valid,

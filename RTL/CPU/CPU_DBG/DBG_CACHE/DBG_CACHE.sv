@@ -48,7 +48,7 @@ module DBG_CACHE
         input  logic                  dc_req_ready,
         output logic [ADDR_WIDTH-1:0] dc_req_addr,
         output logic [1:0]            dc_req_size,
-        output logic [3:0]            dc_req_cmd,
+        output logic [4:0]            dc_req_cmd,
         output logic [63:0]           dc_req_wdata,
         // the debug module works with physical addresses, so the cache gets
         // the same value (it is held until the next access, which is what the
@@ -64,8 +64,8 @@ module DBG_CACHE
         output logic                  wrote          // pulse: a write finished
     );
 
-    localparam logic [3:0] CMD_LOAD   = 4'd0;
-    localparam logic [3:0] CMD_STWTHR = 4'd15;
+    localparam logic [4:0] CMD_LOAD   = 5'd0;
+    localparam logic [4:0] CMD_STWTHR = 5'd15;
 
     typedef enum logic [1:0] {C_IDLE, C_REQ, C_RESP} state_t;
     state_t state;

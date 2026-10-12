@@ -142,7 +142,7 @@ module CPU_DBG
         input  logic                     dc_req_ready,
         output logic [ADDR_WIDTH-1:0]    dc_req_addr,
         output logic [1:0]               dc_req_size,
-        output logic [3:0]               dc_req_cmd,
+        output logic [4:0]               dc_req_cmd,
         output logic [63:0]              dc_req_wdata,
         output logic [ADDR_WIDTH-1:0]    dc_req_paddr,
         input  logic                     dc_resp_valid,
@@ -535,7 +535,7 @@ module CPU_DBG
             assign dc_req_valid = 1'b0;
             assign dc_req_addr  = '0;
             assign dc_req_size  = 2'd0;
-            assign dc_req_cmd   = 4'd0;
+            assign dc_req_cmd   = 5'd0;
             assign dc_req_wdata = '0;
             assign dc_req_paddr = '0;
             assign dc_wrote     = 1'b0;

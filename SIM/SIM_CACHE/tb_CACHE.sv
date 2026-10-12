@@ -53,22 +53,23 @@ module tb_CACHE;
     localparam logic [63:0] PERI_INIT = 64'h1111_0000_0000_0000;
 
     // commands (RTL/CPU/CPU_CACHE/CPU_CACHE_SPEC.md 3.3)
-    localparam logic [3:0] CMD_LOAD     = 4'd0;
-    localparam logic [3:0] CMD_STORE    = 4'd1;
-    localparam logic [3:0] CMD_LR       = 4'd2;
-    localparam logic [3:0] CMD_SC       = 4'd3;
-    localparam logic [3:0] CMD_AMOSWAP  = 4'd4;
-    localparam logic [3:0] CMD_AMOADD   = 4'd5;
-    localparam logic [3:0] CMD_AMOXOR   = 4'd6;
-    localparam logic [3:0] CMD_AMOAND   = 4'd7;
-    localparam logic [3:0] CMD_AMOOR    = 4'd8;
-    localparam logic [3:0] CMD_AMOMIN   = 4'd9;
-    localparam logic [3:0] CMD_AMOMAX   = 4'd10;
-    localparam logic [3:0] CMD_AMOMINU  = 4'd11;
-    localparam logic [3:0] CMD_AMOMAXU  = 4'd12;
-    localparam logic [3:0] CMD_FENCE    = 4'd13;
-    localparam logic [3:0] CMD_FLUSH    = 4'd14;
-    localparam logic [3:0] CMD_STWTHR   = 4'd15;   // write through, no allocate
+    localparam logic [4:0] CMD_LOAD     = 5'd0;
+    localparam logic [4:0] CMD_STORE    = 5'd1;
+    localparam logic [4:0] CMD_LR       = 5'd2;
+    localparam logic [4:0] CMD_SC       = 5'd3;
+    localparam logic [4:0] CMD_AMOSWAP  = 5'd4;
+    localparam logic [4:0] CMD_AMOADD   = 5'd5;
+    localparam logic [4:0] CMD_AMOXOR   = 5'd6;
+    localparam logic [4:0] CMD_AMOAND   = 5'd7;
+    localparam logic [4:0] CMD_AMOOR    = 5'd8;
+    localparam logic [4:0] CMD_AMOMIN   = 5'd9;
+    localparam logic [4:0] CMD_AMOMAX   = 5'd10;
+    localparam logic [4:0] CMD_AMOMINU  = 5'd11;
+    localparam logic [4:0] CMD_AMOMAXU  = 5'd12;
+    localparam logic [4:0] CMD_FENCE    = 5'd13;
+    localparam logic [4:0] CMD_FLUSH    = 5'd14;
+    localparam logic [4:0] CMD_STWTHR   = 5'd15;   // write through, no allocate
+    localparam logic [4:0] CMD_ZERO     = 5'd16;   // cbo.zero: the block becomes zero
 
     //=================================================================
     // Clock / reset
@@ -99,7 +100,7 @@ module tb_CACHE;
     logic                    d_req_valid, d_req_ready;
     logic [PADDR_WIDTH-1:0]  d_req_addr;
     logic [1:0]              d_req_size;
-    logic [3:0]              d_req_cmd;
+    logic [4:0]              d_req_cmd;
     logic [XLEN-1:0]         d_req_wdata;
     logic                    d_resp_valid, d_resp_error;
     logic [XLEN-1:0]         d_resp_data;
@@ -111,7 +112,7 @@ module tb_CACHE;
     logic                    dbg_req_valid, dbg_req_ready;
     logic [PADDR_WIDTH-1:0]  dbg_req_addr;
     logic [1:0]              dbg_req_size;
-    logic [3:0]              dbg_req_cmd;
+    logic [4:0]              dbg_req_cmd;
     logic [XLEN-1:0]         dbg_req_wdata;
     logic                    dbg_resp_valid, dbg_resp_error;
     logic [XLEN-1:0]         dbg_resp_data;
@@ -569,7 +570,7 @@ module tb_CACHE;
     endfunction
 
     // AMO result (value written back to memory)
-    function automatic logic [63:0] amo_calc(input logic [3:0] cmd, input logic [1:0] size,
+    function automatic logic [63:0] amo_calc(input logic [4:0] cmd, input logic [1:0] size,
                                              input logic [63:0] old_v, input logic [63:0] src);
         logic signed [63:0] so, ss;
         logic [63:0] o, s;
@@ -624,7 +625,10 @@ module tb_CACHE;
     int n_i_resp = 0;
     // I$ prefetches issued, and misses served from the prefetch buffer
     int n_ic_pf = 0, n_ic_pf_hit = 0;
+    // line reads of the D$ on the bus (a cbo.zero must not make one)
+    int n_dc_ar = 0;
     always @(posedge clk) begin
+        if (rst_n && u_cache.u_dcache.m_axi4_arvalid && u_cache.u_dcache.m_axi4_arready) n_dc_ar++;
         if (rst_n && u_cache.ev_ic_pf)     n_ic_pf++;
         if (rst_n && u_cache.ev_ic_pf_hit) n_ic_pf_hit++;
     end
@@ -635,7 +639,7 @@ module tb_CACHE;
     //   can issue one request per cycle, so back-to-back accesses (and the
     //   array read/write hazards they create) are exercised.
     //=================================================================
-    logic [3:0]             rq_cmd   [0:QDEPTH-1];
+    logic [4:0]             rq_cmd   [0:QDEPTH-1];
     logic [PADDR_WIDTH-1:0] rq_addr  [0:QDEPTH-1];
     logic [1:0]             rq_size  [0:QDEPTH-1];
     logic [63:0]            rq_wdata [0:QDEPTH-1];
@@ -680,7 +684,7 @@ module tb_CACHE;
         end
     end
 
-    task automatic rq_put(input logic [3:0] cmd, input logic [PADDR_WIDTH-1:0] addr,
+    task automatic rq_put(input logic [4:0] cmd, input logic [PADDR_WIDTH-1:0] addr,
                           input logic [1:0] size, input logic [63:0] wdata,
                           input bit ghost = 1'b0);
         while (((rq_wr + 1) % QDEPTH) == rq_rd) @(posedge clk);
@@ -729,7 +733,7 @@ module tb_CACHE;
                      u_cache.u_dcache.ms_wb_needed[ms_tail_q]);
         ms_tail_q <= u_cache.u_dcache.ms_tail;
     end
-    task automatic d_push(input string name, input logic [3:0] cmd,
+    task automatic d_push(input string name, input logic [4:0] cmd,
                           input logic [PADDR_WIDTH-1:0] addr, input logic [1:0] size,
                           input logic [63:0] wdata);
         logic [63:0] word, newword, exp;
@@ -749,6 +753,17 @@ module tb_CACHE;
             CMD_LOAD: begin
                 word = ref_read_word(addr);
                 exp  = extract(word, addr, size);
+            end
+            CMD_ZERO: begin
+                if (!is_cacheable(addr)) begin
+                    err = 1'b1;
+                end else begin
+                    for (int w = 0; w < DC_BLOCK / 8; w++)
+                        ref_write_word(((addr >> $clog2(DC_BLOCK)) << $clog2(DC_BLOCK)) +
+                                       PADDR_WIDTH'(8 * w), 64'd0);
+                    if (res_valid && (res_addr >> $clog2(DC_BLOCK)) == (addr >> $clog2(DC_BLOCK)))
+                        res_valid = 1'b0;
+                end
             end
             CMD_STORE, CMD_STWTHR: begin
                 word = ref_read_word(addr);
@@ -825,7 +840,7 @@ module tb_CACHE;
     // A request that is driven and taken back in the next cycle
     // (d_req_cancel): no expectation, so an answer for it, or any trace of
     // it in memory, the arrays or the reservation, is an error.
-    task automatic d_ghost(input logic [3:0] cmd, input logic [PADDR_WIDTH-1:0] addr,
+    task automatic d_ghost(input logic [4:0] cmd, input logic [PADDR_WIDTH-1:0] addr,
                            input logic [1:0] size, input logic [63:0] wdata);
         if (oplog) $display("[%0t] GHOST cmd=%0d addr=%010h", $time, cmd, addr);
         rq_put(cmd, addr, size, wdata, 1'b1);
@@ -843,7 +858,7 @@ module tb_CACHE;
     // CPU BFM : debug side (second port of the data cache)
     //   One access at a time, the way the debug module issues them.
     //=================================================================
-    task automatic dbg_exec(input string name, input logic [3:0] cmd,
+    task automatic dbg_exec(input string name, input logic [4:0] cmd,
                             input logic [PADDR_WIDTH-1:0] addr, input logic [1:0] size,
                             input logic [63:0] wdata, input logic [63:0] exp,
                             input bit exp_err, input bit check_data);
@@ -899,6 +914,9 @@ module tb_CACHE;
                             input logic [63:0] v);
         d_push(n, CMD_STWTHR, a, s, v);
     endtask
+    task automatic d_zero(input string n, input logic [PADDR_WIDTH-1:0] a);
+        d_push(n, CMD_ZERO, a, 2'd0, 64'd0);
+    endtask
     task automatic d_fence(input string n);
         d_push(n, CMD_FENCE, MEM_BASE, 2'd3, 64'd0);
     endtask
@@ -922,7 +940,7 @@ module tb_CACHE;
 
     // request that is expected to fail on the bus (address outside the
     // memory map). The reference memory is not touched.
-    task automatic d_push_err(input string name, input logic [3:0] cmd,
+    task automatic d_push_err(input string name, input logic [4:0] cmd,
                               input logic [PADDR_WIDTH-1:0] addr, input logic [1:0] size,
                               input logic [63:0] wdata);
         dq_data[dq_wr]  = 64'd0;

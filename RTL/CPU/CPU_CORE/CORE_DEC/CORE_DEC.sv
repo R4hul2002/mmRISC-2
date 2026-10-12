@@ -46,13 +46,14 @@ module CORE_DEC
         // memory
         output logic        is_load,      // the result comes from the cache
         output logic        is_store,     // the access changes memory
-        output logic [3:0]  mem_cmd,      // command of the cache port
+        output logic [4:0]  mem_cmd,      // command of the cache port
         output logic [1:0]  mem_size,     // 0:byte 1:half 2:word 3:double
         output logic        mem_signed,
 
         // system
         output logic        is_fence,
         output logic        is_fence_i,
+        output logic        is_cbo_zero,  // Zicboz: zero the 64 byte block at rs1
         output logic        is_ecall,
         output logic        is_ebreak,
         output logic        is_mret,
@@ -180,11 +181,12 @@ module CORE_DEC
     localparam logic [4:0] FOP_CVT_I_F = 5'd23;
 
     // commands of the cache port (CPU_CACHE_SPEC.md 5)
-    localparam logic [3:0] CMD_LOAD  = 4'd0;
-    localparam logic [3:0] CMD_STORE = 4'd1;
-    localparam logic [3:0] CMD_LR    = 4'd2;
-    localparam logic [3:0] CMD_FLUSH = 4'd14;
-    localparam logic [3:0] CMD_SC    = 4'd3;
+    localparam logic [4:0] CMD_LOAD  = 5'd0;
+    localparam logic [4:0] CMD_STORE = 5'd1;
+    localparam logic [4:0] CMD_LR    = 5'd2;
+    localparam logic [4:0] CMD_FLUSH = 5'd14;
+    localparam logic [4:0] CMD_SC    = 5'd3;
+    localparam logic [4:0] CMD_ZERO  = 5'd16;
 
     logic [6:0] opcode, funct7;
     logic [2:0] funct3;
@@ -237,6 +239,7 @@ module CORE_DEC
         mem_signed = ~funct3[2];
         is_fence   = 1'b0;
         is_fence_i = 1'b0;
+        is_cbo_zero = 1'b0;
         sys_noarg  = 1'b0;
         is_ecall   = 1'b0;
         is_ebreak  = 1'b0;
@@ -516,15 +519,15 @@ module CORE_DEC
                             if (rs2 != 5'd0) illegal = 1'b1;
                         end
                         5'b00011: mem_cmd = CMD_SC;
-                        5'b00001: mem_cmd = 4'd4;           // AMOSWAP
-                        5'b00000: mem_cmd = 4'd5;           // AMOADD
-                        5'b00100: mem_cmd = 4'd6;           // AMOXOR
-                        5'b01100: mem_cmd = 4'd7;           // AMOAND
-                        5'b01000: mem_cmd = 4'd8;           // AMOOR
-                        5'b10000: mem_cmd = 4'd9;           // AMOMIN
-                        5'b10100: mem_cmd = 4'd10;          // AMOMAX
-                        5'b11000: mem_cmd = 4'd11;          // AMOMINU
-                        5'b11100: mem_cmd = 4'd12;          // AMOMAXU
+                        5'b00001: mem_cmd = 5'd4;           // AMOSWAP
+                        5'b00000: mem_cmd = 5'd5;           // AMOADD
+                        5'b00100: mem_cmd = 5'd6;           // AMOXOR
+                        5'b01100: mem_cmd = 5'd7;           // AMOAND
+                        5'b01000: mem_cmd = 5'd8;           // AMOOR
+                        5'b10000: mem_cmd = 5'd9;           // AMOMIN
+                        5'b10100: mem_cmd = 5'd10;          // AMOMAX
+                        5'b11000: mem_cmd = 5'd11;          // AMOMINU
+                        5'b11100: mem_cmd = 5'd12;          // AMOMAXU
                         default:  illegal = 1'b1;           // AMOCAS is Zacas
                     endcase
                 end else illegal = 1'b1;
@@ -683,6 +686,24 @@ module CORE_DEC
                         // waits for the answer before it touches the
                         // instruction side.
                         mem_cmd    = CMD_FLUSH;
+                    end
+                    // the cache block operations: of them only cbo.zero
+                    // (Zicboz); cbo.clean / flush / inval (Zicbom) are not
+                    // there. It is a store to the whole block at rs1 (no
+                    // offset: the immediate field holds the operation), one
+                    // byte wide for the checks of the core, so that any
+                    // address goes (the cache zeroes the block around it).
+                    3'b010: begin
+                        if ((insn[31:20] == 12'h004) && (insn[11:7] == 5'd0)) begin
+                            is_cbo_zero = 1'b1;
+                            is_store    = 1'b1;
+                            mem_cmd     = CMD_ZERO;
+                            mem_size    = 2'd0;
+                            use_rs1     = 1'b1;
+                            imm         = 64'd0;
+                        end else begin
+                            illegal = 1'b1;
+                        end
                     end
                     default: illegal = 1'b1;
                 endcase

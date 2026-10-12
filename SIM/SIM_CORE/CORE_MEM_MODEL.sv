@@ -71,7 +71,7 @@ module CORE_MEM_MODEL
         input  logic [PADDR_WIDTH-1:0]  d_req_paddr,
         input  logic                    d_req_cancel,   // the request of the last cycle
         input  logic [1:0]              d_req_size,
-        input  logic [3:0]              d_req_cmd,
+        input  logic [4:0]              d_req_cmd,
         input  logic [63:0]             d_req_wdata,
         output logic                    d_resp_valid,
         output logic [63:0]             d_resp_data,
@@ -106,14 +106,15 @@ module CORE_MEM_MODEL
         output logic                    prot_error
     );
 
-    localparam logic [3:0] CMD_LOAD   = 4'd0;
-    localparam logic [3:0] CMD_STORE  = 4'd1;
-    localparam logic [3:0] CMD_LR     = 4'd2;
-    localparam logic [3:0] CMD_SC     = 4'd3;
-    localparam logic [3:0] CMD_AMO_LO = 4'd4;
-    localparam logic [3:0] CMD_AMO_HI = 4'd12;
-    localparam logic [3:0] CMD_FENCE  = 4'd13;
-    localparam logic [3:0] CMD_FLUSH  = 4'd14;
+    localparam logic [4:0] CMD_LOAD   = 5'd0;
+    localparam logic [4:0] CMD_STORE  = 5'd1;
+    localparam logic [4:0] CMD_LR     = 5'd2;
+    localparam logic [4:0] CMD_SC     = 5'd3;
+    localparam logic [4:0] CMD_AMO_LO = 5'd4;
+    localparam logic [4:0] CMD_AMO_HI = 5'd12;
+    localparam logic [4:0] CMD_FENCE  = 5'd13;
+    localparam logic [4:0] CMD_FLUSH  = 5'd14;
+    localparam logic [4:0] CMD_ZERO   = 5'd16;   // cbo.zero: the 64 byte block
 
     // the memory is cleared and loaded by the test bench (one initial block,
     // so that the order is defined)
@@ -166,7 +167,7 @@ module CORE_MEM_MODEL
     endfunction
 
     // DCACHE.sv amo_calc
-    function automatic logic [63:0] amo_calc(input logic [3:0]  cmd,
+    function automatic logic [63:0] amo_calc(input logic [4:0]  cmd,
                                              input logic [1:0]  size,
                                              input logic [63:0] old_v,
                                              input logic [63:0] src);
@@ -182,14 +183,14 @@ module CORE_MEM_MODEL
             so = old_v;  ss = src;
         end
         case (cmd)
-            4'd4:    return s;
-            4'd5:    return o + s;
-            4'd6:    return o ^ s;
-            4'd7:    return o & s;
-            4'd8:    return o | s;
-            4'd9:    return (so < ss) ? o : s;
-            4'd10:   return (so < ss) ? s : o;
-            4'd11:   return (o  < s)  ? o : s;
+            5'd4:    return s;
+            5'd5:    return o + s;
+            5'd6:    return o ^ s;
+            5'd7:    return o & s;
+            5'd8:    return o | s;
+            5'd9:    return (so < ss) ? o : s;
+            5'd10:   return (so < ss) ? s : o;
+            5'd11:   return (o  < s)  ? o : s;
             default: return (o  < s)  ? s : o;
         endcase
     endfunction
@@ -288,7 +289,7 @@ module CORE_MEM_MODEL
     logic                   s1d_live;     // not taken back by the core
     logic [PADDR_WIDTH-1:0] s1d_vaddr, s1d_addr;
     logic [1:0]             s1d_size;
-    logic [3:0]             s1d_cmd;
+    logic [4:0]             s1d_cmd;
     logic [63:0]            s1d_wdata;
 
     assign s1i_addr = {i_req_paddr[PADDR_WIDTH-1:12], s1i_vaddr[11:0]};
@@ -302,7 +303,7 @@ module CORE_MEM_MODEL
             s1i_vaddr <= '0;
             s1d_vaddr <= '0;
             s1d_size  <= 2'd0;
-            s1d_cmd   <= 4'd0;
+            s1d_cmd   <= 5'd0;
             s1d_wdata <= 64'd0;
         end else begin
             s1i_valid <= i_req_valid & i_req_ready & ~i_kill;
@@ -329,14 +330,15 @@ module CORE_MEM_MODEL
     endfunction
 
     // an access takes place this cycle
-    logic       d_acc, d_is_amo, d_is_lr, d_is_sc, d_writes, d_reads;
+    logic       d_acc, d_is_amo, d_is_lr, d_is_sc, d_writes, d_reads, d_is_zero;
     logic [7:0] wr_strb;
     assign d_is_amo = (s1d_cmd >= CMD_AMO_LO) && (s1d_cmd <= CMD_AMO_HI);
     assign d_is_lr  = (s1d_cmd == CMD_LR);
     assign d_is_sc  = (s1d_cmd == CMD_SC);
+    assign d_is_zero = (s1d_cmd == CMD_ZERO);
     assign d_acc    = s1d_live &
                       ((s1d_cmd == CMD_LOAD) || (s1d_cmd == CMD_STORE) ||
-                       d_is_lr || d_is_sc || d_is_amo);
+                       d_is_lr || d_is_sc || d_is_amo || d_is_zero);
     assign d_reads  = (s1d_cmd == CMD_LOAD) || d_is_lr || d_is_amo;
     assign d_writes = (s1d_cmd == CMD_STORE) || d_is_amo;
     assign wr_strb = strb(s1d_addr[2:0], s1d_size);
@@ -413,6 +415,9 @@ module CORE_MEM_MODEL
                         if (wr_strb[b]) wr_word[8*b +: 8] = wr_data[8*b +: 8];
                     mem[widx(s1d_addr)] <= wr_word;
                 end
+                if (d_is_zero)
+                    for (int k = 0; k < 8; k++)
+                        mem[widx({s1d_addr[PADDR_WIDTH-1:6], 6'd0}) + k] <= 64'd0;
 
                 // the reservation, kept per line like the cache
                 if (d_is_lr) begin
@@ -420,7 +425,7 @@ module CORE_MEM_MODEL
                     res_line  <= lidx(s1d_addr);
                 end else if (d_is_sc) begin
                     res_valid <= 1'b0;
-                end else if (d_writes && res_valid &&
+                end else if ((d_writes || d_is_zero) && res_valid &&
                              (res_line == lidx(s1d_addr))) begin
                     res_valid <= 1'b0;
                 end

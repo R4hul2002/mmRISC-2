@@ -13,9 +13,9 @@ The card is split into 2 partitions.
 
 The 3 files of the first partition are all in this directory (`software/boot/`).
 
-| File | Where it comes from | Load address | md5 (2026-10-10) |
+| File | Where it comes from | Load address | md5 (2026-10-12) |
 |---|---|---|---|
-| `fw_jump.bin` | Made here by `scripts/build_opensbi.sh` (with the device tree) | 0x8000_0000 | `2f8e1e041befba9b618a2f9b0697c050` |
+| `fw_jump.bin` | Made here by `scripts/build_opensbi.sh` (with the device tree) | 0x8000_0000 | `a1f61cb7841bb9c261bd1a63ce38f62b` |
 | `Image` | The Linux kernel. The same configuration as built for the Rocket configuration, rebuilt with `CONFIG_PERF_EVENTS` / `CONFIG_RISCV_PMU_SBI` added for the performance counters (`perf`) (2026-10, `CPU_CORE_SPEC.md` decision 69) | 0x8020_0000 | `1d886448db1ae0b8e1629cfeba6b605b` |
 | `boot.json` | The placement table the BIOS reads. Same as the Rocket configuration | ― | `a1c356008baa859fa615b879d0fa18f3` |
 

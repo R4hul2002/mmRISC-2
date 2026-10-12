@@ -2,7 +2,8 @@
 // decision 66)
 //
 //   1 the new CSRs exist and keep only their implemented fields: menvcfg
-//     only STCE, senvcfg nothing, mcountinhibit CY, IR and HPM3-6; CY and IR
+//     only STCE and CBZE (Zicboz), senvcfg only CBZE, mcountinhibit CY, IR
+//     and HPM3-6; CY and IR
 //     really stop mcycle and minstret
 //   2 mip.STIP: with STCE clear the bit M mode writes, with STCE set
 //     time >= stimecmp, and then a write of M mode does not change it
@@ -53,14 +54,15 @@ _start:
     li   x11, -1
     csrw MENVCFG, x11
     csrr x10, MENVCFG
-    li   x12, STCE
-    TEST_EQ_REG(6, x10, x12)          // STCE alone
+    li   x12, STCE | 0x80
+    TEST_EQ_REG(6, x10, x12)          // STCE and CBZE alone
     csrw MENVCFG, x0
     csrr x10, MENVCFG
     TEST_EQ(7, x10, 0)
     csrw SENVCFG, x11
     csrr x10, SENVCFG
-    TEST_EQ(8, x10, 0)
+    TEST_EQ(8, x10, 0x80)             // CBZE alone
+    csrw SENVCFG, x0
     csrw MCOUNTINHIBIT, x11
     csrr x10, MCOUNTINHIBIT
     TEST_EQ(9, x10, 0x7d)             // CY, IR and the four hpmcounters

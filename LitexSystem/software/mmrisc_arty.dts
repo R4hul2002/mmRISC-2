@@ -61,15 +61,19 @@
 			 * (decision 66): Linux then sets its timer in stimecmp
 			 * instead of asking OpenSBI. Zicond, Zihintpause and
 			 * Zihintntl since 2026-10 (decision 68): PAUSE lets Linux's
-			 * cpu_relax() use the hint. riscv,isa stays for OpenSBI and
-			 * older software.
+			 * cpu_relax() use the hint. Zicboz since 2026-10 (decision 76):
+			 * OpenSBI sets menvcfg.CBZE, and Linux zeroes pages with
+			 * cbo.zero (clear_page) instead of reading them from memory
+			 * first; riscv,cboz-block-size has to be there for that.
+			 * riscv,isa stays for OpenSBI and older software.
 			 * Use this tree only with a bitstream that has all of them. */
-			riscv,isa = "rv64imafdc_zicntr_zicond_zicsr_zifencei_zihintntl_zihintpause_zihpm_zba_zbb_smcntrpmf_sscofpmf_sstc";
+			riscv,isa = "rv64imafdc_zicboz_zicntr_zicond_zicsr_zifencei_zihintntl_zihintpause_zihpm_zba_zbb_smcntrpmf_sscofpmf_sstc";
 			riscv,isa-base = "rv64i";
 			riscv,isa-extensions = "i", "m", "a", "f", "d", "c",
-				"zicntr", "zicond", "zicsr", "zifencei", "zihintntl",
+				"zicboz", "zicntr", "zicond", "zicsr", "zifencei", "zihintntl",
 				"zihintpause", "zihpm", "zba", "zbb", "smcntrpmf", "sscofpmf",
 				"sstc";
+			riscv,cboz-block-size = <64>;
 			riscv,pmpgranularity = <4>;
 			riscv,pmpregions = <8>;
 			status = "okay";

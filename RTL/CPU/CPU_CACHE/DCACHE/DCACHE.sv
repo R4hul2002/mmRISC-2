@@ -78,7 +78,7 @@ module DCACHE
         output logic                     d_req_ready,
         input  logic [PADDR_WIDTH-1:0]   d_req_addr,
         input  logic [1:0]               d_req_size,
-        input  logic [3:0]               d_req_cmd,
+        input  logic [4:0]               d_req_cmd,
         input  logic [XLEN-1:0]          d_req_wdata,
         // Physical address of the request. It has to be valid in the cycle
         // the request is in stage 1, which is the cycle after d_req_valid &
@@ -155,17 +155,23 @@ module DCACHE
     //=================================================================
     // Commands
     //=================================================================
-    localparam logic [3:0] CMD_LOAD   = 4'd0;
-    localparam logic [3:0] CMD_STORE  = 4'd1;
-    localparam logic [3:0] CMD_LR     = 4'd2;
-    localparam logic [3:0] CMD_SC     = 4'd3;
-    localparam logic [3:0] CMD_AMO_LO = 4'd4;
-    localparam logic [3:0] CMD_AMO_HI = 4'd12;
-    localparam logic [3:0] CMD_FENCE  = 4'd13;
-    localparam logic [3:0] CMD_FLUSH  = 4'd14;
+    localparam logic [4:0] CMD_LOAD   = 5'd0;
+    localparam logic [4:0] CMD_STORE  = 5'd1;
+    localparam logic [4:0] CMD_LR     = 5'd2;
+    localparam logic [4:0] CMD_SC     = 5'd3;
+    localparam logic [4:0] CMD_AMO_LO = 5'd4;
+    localparam logic [4:0] CMD_AMO_HI = 5'd12;
+    localparam logic [4:0] CMD_FENCE  = 5'd13;
+    localparam logic [4:0] CMD_FLUSH  = 5'd14;
     // write through, no allocate (debug port): the word always goes to memory,
     // a line that happens to be in the cache is updated but not made dirty
-    localparam logic [3:0] CMD_STWTHR = 4'd15;
+    localparam logic [4:0] CMD_STWTHR = 5'd15;
+    // cbo.zero (Zicboz): the whole line becomes zero, without reading it
+    // from memory. A hit writes the eight words in stage 1; a miss takes an
+    // MSHR whose stores cover the line, and its fill makes the beats itself
+    // instead of asking the bus (ms_zero): zero beats, merged with the
+    // stores that join it. Answered at once in both cases.
+    localparam logic [4:0] CMD_ZERO   = 5'd16;
 
     //=================================================================
     // Geometry
@@ -236,7 +242,7 @@ module DCACHE
         return r;
     endfunction
 
-    function automatic logic [63:0] amo_calc(input logic [3:0] cmd, input logic [1:0] size,
+    function automatic logic [63:0] amo_calc(input logic [4:0] cmd, input logic [1:0] size,
                                              input logic [63:0] old_v, input logic [63:0] src);
         logic signed [63:0] so, ss;
         logic [63:0] o, s;
@@ -250,14 +256,14 @@ module DCACHE
             so = old_v;  ss = src;
         end
         case (cmd)
-            4'd4:    return s;
-            4'd5:    return o + s;
-            4'd6:    return o ^ s;
-            4'd7:    return o & s;
-            4'd8:    return o | s;
-            4'd9:    return (so < ss) ? o : s;
-            4'd10:   return (so < ss) ? s : o;
-            4'd11:   return (o  < s)  ? o : s;
+            5'd4:    return s;
+            5'd5:    return o + s;
+            5'd6:    return o ^ s;
+            5'd7:    return o & s;
+            5'd8:    return o | s;
+            5'd9:    return (so < ss) ? o : s;
+            5'd10:   return (so < ss) ? s : o;
+            5'd11:   return (o  < s)  ? o : s;
             default: return (o  < s)  ? s : o;
         endcase
     endfunction
@@ -317,7 +323,7 @@ module DCACHE
     logic                    s1_cacheable;
     logic [PADDR_WIDTH-1:0]  s1_addr;
     logic [1:0]              s1_size;
-    logic [3:0]              s1_cmd;
+    logic [4:0]              s1_cmd;
     logic [63:0]             s1_wdata;
     logic [ROB_BITS-1:0]     s1_rob;
 
@@ -381,6 +387,7 @@ module DCACHE
     assign rob_empty = (rob_count == '0);
 
     logic [NUM_MSHR-1:0]   ms_valid, ms_locked, ms_wb_needed, ms_st_pending;
+    logic [NUM_MSHR-1:0]   ms_zero;        // a cbo.zero: the fill reads nothing
     logic [LINE_BITS-1:0]  ms_line   [0:NUM_MSHR-1];
     logic [WAY_BITS-1:0]   ms_way    [0:NUM_MSHR-1];
     // stores waiting for the fill of their line, merged into its beats:
@@ -700,7 +707,7 @@ module DCACHE
     // Stage 1 decode
     //=================================================================
     logic s1_is_amo, s1_is_load, s1_is_store, s1_is_lr, s1_is_sc, s1_is_fence, s1_is_flush;
-    logic s1_is_stwthr;
+    logic s1_is_stwthr, s1_is_zero;
     logic s1_needs_line, s1_writes, sc_ok, all_idle, fill_wr_en, fill_beat_now;
 
     assign s1_is_load  = (s1_cmd == CMD_LOAD);
@@ -711,6 +718,7 @@ module DCACHE
     assign s1_is_fence = (s1_cmd == CMD_FENCE);
     assign s1_is_flush = (s1_cmd == CMD_FLUSH);
     assign s1_is_stwthr = (s1_cmd == CMD_STWTHR);
+    assign s1_is_zero   = (s1_cmd == CMD_ZERO);
     assign s1_needs_line = s1_is_amo | s1_is_lr | s1_is_sc;
     assign sc_ok         = res_valid && (res_line == s1_line);
     assign s1_writes     = s1_is_store | s1_is_amo | (s1_is_sc & sc_ok);
@@ -718,8 +726,18 @@ module DCACHE
     assign all_idle = ms_empty && wb_empty && (f_state == F_IDLE) &&
                       (w_state == W_IDLE) && (u_state == U_IDLE) && !sw_pend;
 
-    assign fill_beat_now = (f_state == F_DATA) && m_axi4_rvalid && m_axi4_rready;
-    assign fill_wr_en    = fill_beat_now && (m_axi4_rresp == 2'b00);
+    // The beats of the fill: from the bus, or made here for a cbo.zero (one
+    // a cycle, zero, merged with the stores like any other).
+    logic        f_zero, f_rvalid, f_rlast, f_take;
+    logic [63:0] f_rdata;
+    logic [1:0]  f_rresp;
+    assign f_zero   = ms_zero[ms_head];
+    assign f_rvalid = f_zero | m_axi4_rvalid;
+    assign f_rdata  = f_zero ? 64'd0 : m_axi4_rdata;
+    assign f_rresp  = f_zero ? 2'b00 : m_axi4_rresp;
+    assign f_rlast  = f_zero ? (f_beat == WOFF_BITS'(WORDS_PER_BLOCK-1)) : m_axi4_rlast;
+    assign fill_beat_now = (f_state == F_DATA) && f_rvalid && f_take;
+    assign fill_wr_en    = fill_beat_now && (f_rresp == 2'b00);
 
     // A request can only join a fill while the beat carrying its word has not
     // been written yet (its beat is ahead, or due but not in this cycle);
@@ -752,6 +770,17 @@ module DCACHE
     // cycle more for it, against the thirty or so of the fill.
     logic hit_busy_nk;
     assign hit_busy_nk = hit_nk && busy_way[hit_way];
+
+    // cbo.zero on a hit: the words of the line written with zero one a
+    // cycle through the write port of stage 1 (a fill beat goes first), from
+    // the second cycle on (it is never taken back then); the last one makes
+    // the line dirty. These writes do not make stage 1 read its set again
+    // (fwd_own): they change neither the tags nor anything it still reads.
+    logic [WOFF_BITS-1:0] s1_zw;
+    logic                 s1_zero_wr, s1_zero_last, fwd_own;
+    assign s1_zero_wr   = s1_valid && s1_data_ok && s1_cacheable && s1_is_zero && hit_nk &&
+                          !hit_busy_nk && !fill_beat_now && !fl_busy && !s1_first;
+    assign s1_zero_last = (s1_zw == WOFF_BITS'(WORDS_PER_BLOCK-1));
     assign s1_first    = ~s1_ptag_v;
 
     always @(*) begin
@@ -769,6 +798,9 @@ module DCACHE
                 // would overwrite the new value with the old memory word.
                 s1_can_go = !sw_busy && !fl_busy && !s1_first &&
                             (hit_nk ? (!hit_busy_nk && !fill_beat_now) : !ms_match);
+            end else if (hit_nk && s1_is_zero) begin
+                // cbo.zero on a hit: the eight words, one a cycle (s1_zw)
+                s1_can_go = s1_zero_wr && s1_zero_last;
             end else if (hit_nk) begin
                 // writing accesses need the array and the tag write port;
                 // an atomic first reads (s1_amo_rd)
@@ -778,9 +810,11 @@ module DCACHE
                 s1_can_go = 1'b0;                     // wait for the fill, then retry
             end else if (ms_match) begin
                 // a store does not join behind a load of the same word that
-                // is waiting for the fill: that load must not see it
+                // is waiting for the fill: that load must not see it. A
+                // cbo.zero does not join at all: it waits for the line and
+                // zeroes it as a hit
                 s1_can_go = !ms_locked[ms_match_id] && ms_attach_ok && !s1_first &&
-                            !(s1_is_store && ms_ld_same_word);
+                            !(s1_is_store && ms_ld_same_word) && !s1_is_zero;
             end else begin
                 s1_can_go = !ms_full && victim_avail && !(victim_dirty && wb_full) &&
                             !fl_busy && !s1_first;
@@ -870,16 +904,21 @@ module DCACHE
             dat_wr_en   = 1'b1;
             dat_wr_way  = ms_way[ms_head];
             dat_wr_addr = {ms_line[ms_head][IDX_BITS-1:0], f_beat};
-            dat_wr_data = m_axi4_rdata;
+            dat_wr_data = f_rdata;
             dat_wr_strb = 8'hFF;
-            dat_wr_data = merge_bytes(m_axi4_rdata, ms_st_data[ms_head][f_beat],
+            dat_wr_data = merge_bytes(f_rdata, ms_st_data[ms_head][f_beat],
                                       ms_st_strb[ms_head][f_beat]);
         end else begin
-            dat_wr_en   = s1_store_hit | s1_thr_hit;
+            dat_wr_en   = s1_store_hit | s1_thr_hit | s1_zero_wr;
             dat_wr_way  = s1_wr_way;
             dat_wr_addr = s1_wr_addr;
             dat_wr_data = s1_wr_data;
             dat_wr_strb = s1_wr_strb;
+            if (s1_zero_wr) begin
+                dat_wr_addr = {addr_index(s1_addr), s1_zw};
+                dat_wr_data = 64'd0;
+                dat_wr_strb = 8'hFF;
+            end
         end
     end
 
@@ -907,13 +946,13 @@ module DCACHE
         tag_wr_tag   = s1_ptag;
         tag_wr_valid = 1'b1;
         tag_wr_dirty = 1'b1;
-        if (fill_beat_now && m_axi4_rlast) begin
+        if (fill_beat_now && f_rlast) begin
             tag_wr_en    = 1'b1;
             tag_wr_index = ms_line[ms_head][IDX_BITS-1:0];
             tag_wr_way   = ms_way[ms_head];
             tag_wr_tag   = ms_line[ms_head][LINE_BITS-1:IDX_BITS];
-            tag_wr_valid = !(f_err || (m_axi4_rresp != 2'b00));
-            tag_wr_dirty = ms_st_pending[ms_head] && !(f_err || (m_axi4_rresp != 2'b00));
+            tag_wr_valid = !(f_err || (f_rresp != 2'b00));
+            tag_wr_dirty = ms_st_pending[ms_head] && !(f_err || (f_rresp != 2'b00));
         end else if (fl_state == FL_INV) begin
             tag_wr_en    = 1'b1;
             tag_wr_index = fl_index;
@@ -921,7 +960,7 @@ module DCACHE
             tag_wr_tag   = '0;
             tag_wr_valid = 1'b0;
             tag_wr_dirty = 1'b0;
-        end else if (s1_store_hit_nk) begin
+        end else if (s1_store_hit_nk || (s1_zero_wr && s1_zero_last)) begin
             tag_wr_en    = 1'b1;
             tag_wr_dirty = s1_kill ? eff_dirty[hit_way] : 1'b1;
         end
@@ -970,6 +1009,7 @@ module DCACHE
             ms_locked    <= '0;
             ms_wb_needed <= '0;
             ms_st_pending<= '0;
+            ms_zero      <= '0;
             for (i = 0; i < NUM_MSHR; i++)
                 for (int w = 0; w < WORDS_PER_BLOCK; w++) ms_st_strb[i][w] <= '0;
             ms_head      <= '0;
@@ -1006,6 +1046,8 @@ module DCACHE
             fl_rob       <= '0;
             lfsr         <= 16'hBEEF;
             fwd_valid    <= 1'b0;
+            fwd_own      <= 1'b0;
+            s1_zw        <= '0;
             tfwd_en      <= 1'b0;
             tfwd_index   <= '0;
             tfwd_way     <= '0;
@@ -1062,6 +1104,7 @@ module DCACHE
             tfwd_valid <= tag_wr_valid;
             tfwd_dirty <= tag_wr_dirty;
             fwd_valid <= dat_wr_en;
+            fwd_own   <= s1_zero_wr && !fill_wr_en;
             fwd_addr  <= dat_wr_addr;
             fwd_way   <= dat_wr_way;
             fwd_data  <= dat_wr_data;
@@ -1080,6 +1123,9 @@ module DCACHE
             //---------------------------------------------------------
             // stage 0 : accept a request
             //---------------------------------------------------------
+            if (d_req_valid && d_req_ready) s1_zw <= '0;
+            else if (s1_zero_wr)            s1_zw <= s1_zw + WOFF_BITS'(1);
+
             if (d_req_valid && d_req_ready) begin
                 s1_valid     <= 1'b1;
                 s1_addr      <= d_req_addr;
@@ -1125,15 +1171,15 @@ module DCACHE
             // later miss read the tags was then gone one cycle later, and
             // the miss evicted the line as clean (the store was lost).
             if (s1_valid && !s1_can_retire) begin
-                if (array_rd_busy || fl_busy || (fill_beat_now && m_axi4_rlast) ||
+                if (array_rd_busy || fl_busy || (fill_beat_now && f_rlast) ||
                     (tfwd_en   && (tfwd_index == addr_index(s1_addr))) ||
-                    (fwd_valid && (fwd_addr[DADDR_BITS-1 -: IDX_BITS] == addr_index(s1_addr))))
+                    (fwd_valid && !fwd_own && (fwd_addr[DADDR_BITS-1 -: IDX_BITS] == addr_index(s1_addr))))
                     s1_data_ok <= 1'b0;
             end
             // re-read the arrays for the request kept in stage 1
             if (s1_valid && !s1_can_retire && !s1_wait_fill && !array_rd_busy && !fl_busy &&
                 !(d_req_valid && d_req_ready) && !s1_reread &&
-                (!s1_data_ok || (fill_beat_now && m_axi4_rlast)))
+                (!s1_data_ok || (fill_beat_now && f_rlast)))
                 s1_reread <= 1'b1;
             // the re-read only happens when the read port is granted; an
             // engine using the port keeps the request waiting
@@ -1227,7 +1273,7 @@ module DCACHE
                     end else if (s1_is_sc) begin
                         rob_data[s1_rob] <= sc_ok ? 64'd0 : 64'd1;
                         res_valid        <= 1'b0;
-                    end else if (s1_writes) begin
+                    end else if (s1_writes || s1_is_zero) begin
                         if (res_valid && (res_line == s1_line)) res_valid <= 1'b0;
                     end
                 end
@@ -1266,7 +1312,10 @@ module DCACHE
                     ms_wb_needed[ms_tail]  <= victim_dirty;
                     ms_wb_tag[ms_tail]     <= victim_tag;
                     ms_locked[ms_tail]     <= 1'b0;
-                    ms_st_pending[ms_tail] <= s1_is_store;
+                    ms_st_pending[ms_tail] <= s1_is_store | s1_is_zero;
+                    ms_zero[ms_tail]       <= s1_is_zero;
+                    // (a cbo.zero has no bytes of its own: its fill makes
+                    // zero beats, and later stores merge into them)
                     for (int w = 0; w < WORDS_PER_BLOCK; w++)
                         ms_st_strb[ms_tail][w] <= (s1_is_store && (WOFF_BITS'(w) == addr_woff(s1_addr)))
                                                   ? size_strb(s1_addr[2:0], s1_size) : 8'h00;
@@ -1277,6 +1326,10 @@ module DCACHE
                         rob_wait[s1_rob] <= 1'b1;
                         rob_mshr[s1_rob] <= ms_tail;
                         rob_woff[s1_rob] <= addr_woff(s1_addr);
+                    end else if (s1_is_zero) begin
+                        // nothing comes from memory, so nothing can fail
+                        rob_done[s1_rob] <= 1'b1;
+                        if (res_valid && (res_line == s1_line)) res_valid <= 1'b0;
                     end else begin                      // store (as above)
                         if (s1_st_ack) begin
                             rob_done[s1_rob] <= 1'b1;
@@ -1314,6 +1367,7 @@ module DCACHE
                     ms_wb_tag[ms_tail]     <= victim_tag;
                     ms_locked[ms_tail]     <= 1'b1;
                     ms_st_pending[ms_tail] <= 1'b0;
+                    ms_zero[ms_tail]       <= 1'b0;
                     for (int w = 0; w < WORDS_PER_BLOCK; w++) ms_st_strb[ms_tail][w] <= 8'h00;
                     ms_tail                <= ms_next(ms_tail);
                     ms_push                = 1'b1;
@@ -1343,8 +1397,9 @@ module DCACHE
                         f_err          <= 1'b0;
                         f_beat         <= '0;
                         m_axi4_araddr  <= {ms_line[ms_head], {OFF_BITS{1'b0}}};
-                        m_axi4_arvalid <= 1'b1;
-                        f_state        <= F_AR;
+                        // a cbo.zero reads nothing: straight to its beats
+                        m_axi4_arvalid <= !ms_zero[ms_head];
+                        f_state        <= ms_zero[ms_head] ? F_DATA : F_AR;
                         if (ms_wb_needed[ms_head]) begin
                             f_wb_word <= '0;
                             f_wb_way  <= ms_way[ms_head];
@@ -1360,26 +1415,26 @@ module DCACHE
                 end
                 F_DATA: begin
                     if (fill_beat_now) begin
-                        if (m_axi4_rresp != 2'b00) f_err <= 1'b1;
+                        if (f_rresp != 2'b00) f_err <= 1'b1;
                         f_beat <= f_beat + WOFF_BITS'(1);
                         for (i = 0; i < ROB_DEPTH; i++) begin
                             if (rob_valid[i] && rob_wait[i] && (rob_mshr[i] == ms_head)) begin
                                 if (rob_st[i]) begin
                                     // a store waits for the end of the fill
-                                    if (m_axi4_rlast) begin
+                                    if (f_rlast) begin
                                         rob_done[i] <= 1'b1;
                                         rob_wait[i] <= 1'b0;
-                                        rob_err[i]  <= f_err | (m_axi4_rresp != 2'b00);
+                                        rob_err[i]  <= f_err | (f_rresp != 2'b00);
                                     end
                                 end else if (rob_woff[i] == f_beat) begin
                                     // with the stores already merged into the word
-                                    rob_data[i] <= extract(merge_bytes(m_axi4_rdata, ms_st_data[ms_head][f_beat],
+                                    rob_data[i] <= extract(merge_bytes(f_rdata, ms_st_data[ms_head][f_beat],
                                                                        ms_st_strb[ms_head][f_beat]),
                                                            rob_lsb[i], rob_size[i]);
                                     rob_done[i] <= 1'b1;
                                     rob_wait[i] <= 1'b0;
-                                    rob_err[i]  <= (m_axi4_rresp != 2'b00);
-                                end else if (m_axi4_rlast) begin
+                                    rob_err[i]  <= (f_rresp != 2'b00);
+                                end else if (f_rlast) begin
                                     // the fill ended before the word arrived
                                     rob_done[i] <= 1'b1;
                                     rob_wait[i] <= 1'b0;
@@ -1387,10 +1442,11 @@ module DCACHE
                                 end
                             end
                         end
-                        if (m_axi4_rlast) begin
+                        if (f_rlast) begin
                             ms_valid[ms_head]      <= 1'b0;
                             ms_locked[ms_head]     <= 1'b0;
                             ms_st_pending[ms_head] <= 1'b0;
+                            ms_zero[ms_head]       <= 1'b0;
                             ms_head                <= ms_next(ms_head);
                             ms_pop                  = 1'b1;
                             s1_wait_fill           <= 1'b0;
@@ -1627,10 +1683,12 @@ module DCACHE
     // first beat comes two cycles after the address at the earliest from
     // the L2 and the memory models here, so this never actually holds a
     // beat back; it is there for a slave that answers in one.
-    assign m_axi4_rready  = (f_state == F_DATA) &&
+    // (the same holds for the beats a cbo.zero makes, which come at once)
+    assign f_take         = (f_state == F_DATA) &&
                             ((c_state == C_IDLE) || (c_state == C_PUSH) ||
                              ((f_beat != WOFF_BITS'(WORDS_PER_BLOCK-1)) &&
                               ((c_state != C_READ) || (f_beat < f_wb_word))));
+    assign m_axi4_rready  = f_take & ~f_zero;
 
     assign m_axi4_awid    = AXI4_ID_WB[AXI4_ID_WIDTH-1:0];
     assign m_axi4_awlen   = w_single ? 8'd0 : 8'(WORDS_PER_BLOCK - 1);

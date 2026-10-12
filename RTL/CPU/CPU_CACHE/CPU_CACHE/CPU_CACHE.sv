@@ -62,7 +62,7 @@ module CPU_CACHE
         output logic                     d_req_ready,
         input  logic [PADDR_WIDTH-1:0]   d_req_addr,
         input  logic [1:0]               d_req_size,
-        input  logic [3:0]               d_req_cmd,
+        input  logic [4:0]               d_req_cmd,
         input  logic [XLEN-1:0]          d_req_wdata,
         input  logic [PADDR_WIDTH-1:0]   d_req_paddr,
         input  logic                     d_req_cancel,    // the request of the last cycle
@@ -76,7 +76,7 @@ module CPU_CACHE
         output logic                     dbg_req_ready,
         input  logic [PADDR_WIDTH-1:0]   dbg_req_addr,
         input  logic [1:0]               dbg_req_size,
-        input  logic [3:0]               dbg_req_cmd,
+        input  logic [4:0]               dbg_req_cmd,
         input  logic [XLEN-1:0]          dbg_req_wdata,
         input  logic [PADDR_WIDTH-1:0]   dbg_req_paddr,
         output logic                     dbg_resp_valid,
@@ -404,7 +404,7 @@ module CPU_CACHE
     logic                   dc_req_valid, dc_req_ready;
     logic [PADDR_WIDTH-1:0] dc_req_addr;
     logic [1:0]             dc_req_size;
-    logic [3:0]             dc_req_cmd;
+    logic [4:0]             dc_req_cmd;
     logic [XLEN-1:0]        dc_req_wdata;
     logic [PADDR_WIDTH-1:0] dc_req_paddr;
     logic                   dc_resp_valid, dc_resp_error, dc_resp_drop, dc_req_cancel;

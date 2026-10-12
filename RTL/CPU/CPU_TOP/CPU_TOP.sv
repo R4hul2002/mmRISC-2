@@ -546,7 +546,7 @@ module CPU_TOP
     logic                       cpu_d_req_valid, cpu_d_req_ready;
     logic [AXI4_ADDR_WIDTH-1:0] cpu_d_req_addr, cpu_d_req_paddr;
     logic [1:0]                 cpu_d_req_size;
-    logic [3:0]                 cpu_d_req_cmd;
+    logic [4:0]                 cpu_d_req_cmd;
     logic [63:0]                cpu_d_req_wdata;
     logic                       cc_d_resp_valid, cc_d_resp_error;
     logic [63:0]                cc_d_resp_data;
@@ -563,7 +563,7 @@ module CPU_TOP
     logic                       dbg_dc_req_valid, dbg_dc_req_ready;
     logic [AXI4_ADDR_WIDTH-1:0] dbg_dc_req_addr, dbg_dc_req_paddr;
     logic [1:0]                 dbg_dc_req_size;
-    logic [3:0]                 dbg_dc_req_cmd;
+    logic [4:0]                 dbg_dc_req_cmd;
     logic [63:0]                dbg_dc_req_wdata;
     logic                       dbg_dc_resp_valid, dbg_dc_resp_error;
     logic [63:0]                dbg_dc_resp_data;
@@ -731,7 +731,7 @@ module CPU_TOP
     logic                       dma_dc_req_valid, dma_dc_req_ready;
     logic [AXI4_ADDR_WIDTH-1:0] dma_dc_req_addr, dma_dc_req_paddr;
     logic [1:0]                 dma_dc_req_size;
-    logic [3:0]                 dma_dc_req_cmd;
+    logic [4:0]                 dma_dc_req_cmd;
     logic [63:0]                dma_dc_req_wdata;
     logic                       dma_dc_resp_valid, dma_dc_resp_error;
     logic [63:0]                dma_dc_resp_data;
@@ -739,7 +739,7 @@ module CPU_TOP
     logic                       p2_req_valid, p2_req_ready;
     logic [AXI4_ADDR_WIDTH-1:0] p2_req_addr, p2_req_paddr;
     logic [1:0]                 p2_req_size;
-    logic [3:0]                 p2_req_cmd;
+    logic [4:0]                 p2_req_cmd;
     logic [63:0]                p2_req_wdata;
     logic                       p2_resp_valid, p2_resp_error;
     logic [63:0]                p2_resp_data;

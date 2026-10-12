@@ -128,6 +128,8 @@ module CORE_CSR
         output logic        mstatus_tvm_out,
         output logic        mstatus_tw_out,
         output logic        mstatus_tsr_out,
+        output logic        menvcfg_cbze_out,   // Zicboz: cbo.zero allowed below M
+        output logic        senvcfg_cbze_out,   //   ... and in U too
 
         // PMP configuration, flattened for the checker
         output logic [8*PMP_ENTRIES-1:0]  pmpcfg_out,
@@ -278,10 +280,11 @@ module CORE_CSR
     logic [63:0] satp;
     logic [31:0] mcounteren, scounteren;
     logic [63:0] mcycle, minstret;
-    // Sstc and its company: menvcfg is STCE alone (every other field belongs
-    // to an extension this core does not have and reads 0), senvcfg is all
-    // read only 0, mcountinhibit has CY and IR (no hpmcounters)
-    logic        menvcfg_stce;
+    // Sstc and its company: menvcfg has STCE and CBZE (Zicboz), every other
+    // field belongs to an extension this core does not have and reads 0;
+    // senvcfg has CBZE alone; mcountinhibit has CY and IR (and the
+    // hpmcounters)
+    logic        menvcfg_stce, menvcfg_cbze, senvcfg_cbze;
     logic        inhibit_cy, inhibit_ir;
     logic [63:0] stimecmp;
     logic        stip_cmp;       // time >= stimecmp, one cycle late
@@ -332,6 +335,8 @@ module CORE_CSR
     assign mstatus_tvm_out  = mstatus_tvm;
     assign mstatus_tw_out   = mstatus_tw;
     assign mstatus_tsr_out  = mstatus_tsr;
+    assign menvcfg_cbze_out = menvcfg_cbze;
+    assign senvcfg_cbze_out = senvcfg_cbze;
 
     //-----------------------------------------------------------------
     // PMP registers
@@ -622,9 +627,9 @@ module CORE_CSR
             CSR_SCAUSE    : rd_data = scause_val;
             CSR_STVAL     : rd_data = stval;
             CSR_SIP       : rd_data = sip_val;
-            CSR_SENVCFG   : rd_data = 64'd0;
+            CSR_SENVCFG   : rd_data = {56'd0, senvcfg_cbze, 7'd0};
             CSR_STIMECMP  : rd_data = stimecmp;
-            CSR_MENVCFG   : rd_data = {menvcfg_stce, 63'd0};
+            CSR_MENVCFG   : rd_data = {menvcfg_stce, 55'd0, menvcfg_cbze, 7'd0};
             CSR_MCOUNTINHIBIT: rd_data = {32'd0, hpm_inh[31:3], inhibit_ir, 1'b0, inhibit_cy};
             CSR_MCYCLECFG : rd_data = {1'b0, cy_minh, cy_sinh, cy_uinh, 60'd0};
             CSR_MINSTRETCFG:rd_data = {1'b0, ir_minh, ir_sinh, ir_uinh, 60'd0};
@@ -786,6 +791,8 @@ module CORE_CSR
             mcycle       <= 64'd0;
             minstret     <= 64'd0;
             menvcfg_stce <= 1'b0;
+            menvcfg_cbze <= 1'b0;
+            senvcfg_cbze <= 1'b0;
             tselect      <= '0;
             t_dmode      <= '0;
             t_action     <= '0;
@@ -993,7 +1000,11 @@ module CORE_CSR
                         mip_seip <= wr_data[IRQ_S_EXT];
                         mip_lcofip <= wr_data[IRQ_LCOF];
                     end
-                    CSR_MENVCFG      : menvcfg_stce <= wr_data[63];
+                    CSR_MENVCFG      : begin
+                        menvcfg_stce <= wr_data[63];
+                        menvcfg_cbze <= wr_data[7];
+                    end
+                    CSR_SENVCFG      : senvcfg_cbze <= wr_data[7];
                     CSR_MCOUNTINHIBIT: begin
                         inhibit_cy <= wr_data[0];
                         inhibit_ir <= wr_data[2];

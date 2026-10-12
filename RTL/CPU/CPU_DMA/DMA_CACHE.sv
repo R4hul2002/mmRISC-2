@@ -63,7 +63,7 @@ module DMA_CACHE
         input  logic                  dc_req_ready,
         output logic [ADDR_WIDTH-1:0] dc_req_addr,
         output logic [1:0]            dc_req_size,
-        output logic [3:0]            dc_req_cmd,
+        output logic [4:0]            dc_req_cmd,
         output logic [63:0]           dc_req_wdata,
         // physical addresses already, and held until the next request: the
         // cache wants the tag in the cycle after it took the request
@@ -73,8 +73,8 @@ module DMA_CACHE
         input  logic                  dc_resp_error
     );
 
-    localparam logic [3:0] CMD_LOAD   = 4'd0;
-    localparam logic [3:0] CMD_STWTHR = 4'd15;
+    localparam logic [4:0] CMD_LOAD   = 5'd0;
+    localparam logic [4:0] CMD_STWTHR = 5'd15;
     localparam logic [1:0] RESP_OKAY   = 2'b00;
     localparam logic [1:0] RESP_SLVERR = 2'b10;
 

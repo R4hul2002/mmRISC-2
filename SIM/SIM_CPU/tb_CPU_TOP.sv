@@ -747,7 +747,7 @@ module tb_CPU_TOP;
     localparam logic [3:0] CC_STORE = 4'd1;
     localparam logic [3:0] CC_FLUSH = 4'd14;
 
-    task automatic cache_exec(input logic [3:0] cmd, input logic [39:0] addr,
+    task automatic cache_exec(input logic [4:0] cmd, input logic [39:0] addr,
                               input logic [1:0] size, input logic [63:0] wdata,
                               output logic [63:0] rdata, output bit err);
         @(posedge clk);

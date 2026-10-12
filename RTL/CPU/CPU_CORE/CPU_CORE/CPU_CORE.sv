@@ -71,7 +71,7 @@ module CPU_CORE
         output logic [PADDR_WIDTH-1:0]  d_req_addr,
         output logic [PADDR_WIDTH-1:0]  d_req_paddr,
         output logic [1:0]              d_req_size,
-        output logic [3:0]              d_req_cmd,
+        output logic [4:0]              d_req_cmd,
         output logic [63:0]             d_req_wdata,
         output logic                    d_req_cancel,   // the request of the last cycle
         input  logic                    d_resp_valid,
@@ -192,7 +192,7 @@ module CPU_CORE
     logic                   lsu_d_req_valid, lsu_d_req_ready;
     logic [PADDR_WIDTH-1:0] lsu_d_req_addr, lsu_d_req_paddr;
     logic [1:0]             lsu_d_req_size;
-    logic [3:0]             lsu_d_req_cmd;
+    logic [4:0]             lsu_d_req_cmd;
     logic [63:0]            lsu_d_req_wdata;
     logic                   lsu_d_resp_valid;
     logic                   ptw_req_valid, ptw_req_ready, ptw_resp_valid;
@@ -275,10 +275,11 @@ module CPU_CORE
     logic        dec_is_mdu;
     logic [2:0]  dec_mdu_op;
     logic        dec_is_load, dec_is_store;
-    logic [3:0]  dec_mem_cmd;
+    logic [4:0]  dec_mem_cmd;
     logic [1:0]  dec_mem_size;
     logic        dec_mem_signed;
     logic        dec_is_fence, dec_is_fence_i, dec_is_ecall, dec_is_ebreak;
+    logic        dec_is_cbo_zero;
     logic        dec_is_mret, dec_is_sret, dec_is_sfence, dec_is_wfi, dec_illegal;
     logic        dec_is_fp, dec_fp_arith, dec_fp_fmt;
     logic [4:0]  dec_fp_op;
@@ -319,6 +320,7 @@ module CPU_CORE
             .mem_signed  (dec_mem_signed),
             .is_fence    (dec_is_fence),
             .is_fence_i  (dec_is_fence_i),
+            .is_cbo_zero (dec_is_cbo_zero),
             .is_ecall    (dec_is_ecall),
             .is_ebreak   (dec_is_ebreak),
             .is_mret     (dec_is_mret),
@@ -450,7 +452,7 @@ module CPU_CORE
     logic        ex_is_mdu;
     logic [2:0]  ex_mdu_op;
     logic        ex_is_load, ex_is_store;
-    logic [3:0]  ex_mem_cmd;
+    logic [4:0]  ex_mem_cmd;
     logic [1:0]  ex_mem_size;
     logic        ex_mem_signed;
     logic        ex_is_fp, ex_fp_arith, ex_fp_fmt, ex_fp_we_rd;
@@ -498,7 +500,7 @@ module CPU_CORE
     logic        mr_exc_r, mr_exc_int_r;
     logic [4:0]  mr_exc_cause_r;
     logic [63:0] mr_exc_tval_r;
-    logic [3:0]  mr_cmd;
+    logic [4:0]  mr_cmd;
     logic [63:0] mr_vaddr, mr_paddr, mr_wdata;
     logic [1:0]  mr_size;
     logic        mr_signed;
@@ -521,7 +523,7 @@ module CPU_CORE
     logic [11:0] ma_csr_addr;
     logic [63:0] ma_csr_wdata;
     // the access, for when it goes from MA (CORE_LSU)
-    logic [3:0]  ma_cmd;
+    logic [4:0]  ma_cmd;
     logic [63:0] ma_paddr, ma_wdata;
     logic [1:0]  ma_size;
     logic        ma_signed;
@@ -830,6 +832,7 @@ module CPU_CORE
     logic [1:0]  priv;
     logic [63:0] satp;
     logic        st_sum, st_mxr, st_mprv, st_tvm, st_tw, st_tsr;
+    logic        st_cbze_m, st_cbze_s;     // menvcfg.CBZE, senvcfg.CBZE
     logic [1:0]  st_mpp;
     logic [8*PMP_ENTRIES-1:0]  pmpcfg;
     logic [64*PMP_ENTRIES-1:0] pmpaddr, pmpmask;
@@ -939,6 +942,8 @@ module CPU_CORE
             .mstatus_tvm_out  (st_tvm),
             .mstatus_tw_out   (st_tw),
             .mstatus_tsr_out  (st_tsr),
+            .menvcfg_cbze_out (st_cbze_m),
+            .senvcfg_cbze_out (st_cbze_s),
             .pmpcfg_out  (pmpcfg),
             .pmpaddr_out (pmpaddr),
             .pmpmask_out (pmpmask),
@@ -1129,7 +1134,7 @@ module CPU_CORE
     assign d_req_addr   = ptw_active ? ptw_req_addr[PADDR_WIDTH-1:0]  : lsu_d_req_addr;
     assign d_req_paddr  = ptw_active ? ptw_req_paddr[PADDR_WIDTH-1:0] : lsu_d_req_paddr;
     assign d_req_size   = ptw_active ? 2'd3  : lsu_d_req_size;   // eight bytes
-    assign d_req_cmd    = ptw_active ? 4'd0  : lsu_d_req_cmd;    // a plain load
+    assign d_req_cmd    = ptw_active ? 5'd0  : lsu_d_req_cmd;    // a plain load
     assign d_req_wdata  = ptw_active ? 64'd0 : lsu_d_req_wdata;
     // the walker takes the port only when nothing of the LSU is in flight
     // (lsu_idle), so a take back is always the LSU's
@@ -1180,7 +1185,7 @@ module CPU_CORE
     assign lsu_e_valid = ex_valid & ex_ls & ~ex_exc_r &
                          ~stall_mr & ~lu_hazard & ~fp_wait;
 
-    assign mr_spec_ok  = (mr_cmd == 4'd0) & (mr_paddr >= MEM_BASE);  // a cacheable load
+    assign mr_spec_ok  = (mr_cmd == 5'd0) & (mr_paddr >= MEM_BASE);  // a cacheable load
     assign older_done  = ~ma_valid | commit;
     assign lsu_e_go    = mr_e_acc & mr_valid & ~mr_exc & ~flush & ~mr_tlb_wait &
                          ~(ma_valid & ma_mem & ~ma_issued) &
@@ -1234,7 +1239,7 @@ module CPU_CORE
             mr_e_acc     <= 1'b0;
             mr_issued_r  <= 1'b0;
             ma_issued    <= 1'b0;
-            ma_cmd       <= 4'd0;
+            ma_cmd       <= 5'd0;
             ma_paddr     <= 64'd0;
             ma_wdata     <= 64'd0;
             ma_size      <= 2'd0;
@@ -1277,6 +1282,11 @@ module CPU_CORE
     //   and a fault of the translation were already found in EX.
     //=================================================================
     logic        mr_exc, mr_exc_int;
+    // cbo.zero on memory that is not cached (below MEM_BASE, the
+    // peripherals): a store access fault, as a region that does not take
+    // cache block operations
+    logic        mr_zero_io;
+    assign mr_zero_io = (mr_cmd == 5'd16) & (mr_paddr < MEM_BASE);
     logic [4:0]  mr_exc_cause;
     logic [63:0] mr_exc_tval;
 
@@ -1300,7 +1310,7 @@ module CPU_CORE
                          ? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)
                          : (mr_is_store ? EXC_SFAULT : EXC_LFAULT);
             mr_exc_tval  = mr_vaddr;
-        end else if (!mr_exc_r && (mr_is_load || mr_is_store) && mr_pmp_fail) begin
+        end else if (!mr_exc_r && (mr_is_load || mr_is_store) && (mr_pmp_fail || mr_zero_io)) begin
             mr_exc       = 1'b1;
             mr_exc_cause = mr_is_store ? EXC_SFAULT : EXC_LFAULT;
             mr_exc_tval  = mr_vaddr;
@@ -1587,7 +1597,10 @@ module CPU_CORE
           (dec_is_mret   & (priv != PRIV_M))
         | (dec_is_sret   & ((priv == PRIV_U) | ((priv == PRIV_S) & st_tsr)))
         | (dec_is_sfence & ((priv == PRIV_U) | ((priv == PRIV_S) & st_tvm)))
-        | (dec_is_wfi    & (priv != PRIV_M) & st_tw);
+        | (dec_is_wfi    & (priv != PRIV_M) & st_tw)
+        // cbo.zero below M only as menvcfg.CBZE (and in U senvcfg.CBZE) let it
+        | (dec_is_cbo_zero & (priv != PRIV_M) &
+           ~(st_cbze_m & ((priv == PRIV_S) | st_cbze_s)));
 
     //=================================================================
     // exceptions found in ID
@@ -1761,7 +1774,7 @@ module CPU_CORE
             ex_mdu_op     <= 3'd0;
             ex_is_load    <= 1'b0;
             ex_is_store   <= 1'b0;
-            ex_mem_cmd    <= 4'd0;
+            ex_mem_cmd    <= 5'd0;
             ex_mem_size   <= 2'd0;
             ex_mem_signed <= 1'b0;
             ex_is_fp        <= 1'b0;
@@ -1839,7 +1852,7 @@ module CPU_CORE
             mr_exc_int_r  <= 1'b0;
             mr_exc_cause_r<= 5'd0;
             mr_exc_tval_r <= 64'd0;
-            mr_cmd        <= 4'd0;
+            mr_cmd        <= 5'd0;
             mr_vaddr      <= 64'd0;
             mr_paddr      <= 64'd0;
             mr_tlb_wait   <= 1'b0;
@@ -2424,7 +2437,7 @@ module CPU_CORE
     assign hpm_ev[17] = ~id_issue & ~redirect_valid & stall_ex; // back end full
     assign hpm_ev[18] = ev_l2_read;                            // L2 reads (L1 fills)
     assign hpm_ev[19] = ev_l2_miss;                            // L2 read misses
-    assign hpm_ev[20] = stall_ma & (ma_cmd == 4'd1);           // MA waits for a store (not AMO / SC)
+    assign hpm_ev[20] = stall_ma & (ma_cmd == 5'd1);           // MA waits for a store (not AMO / SC)
     assign hpm_ev[21] = stall_ma & ev_dc_miss;                 // MA waits while the D$ handles a miss
     assign hpm_ev[22] = ev_fills_1;                            // a line fill in flight
     assign hpm_ev[23] = ev_fills_2;                            // two or more

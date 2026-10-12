@@ -593,7 +593,7 @@ module tb_DBG;
     //=================================================================
     // CPU_BFM through the L1 caches (CPU_CACHE inside CPU_TOP)
     //=================================================================
-    task automatic bfm_cache_exec(input logic [3:0] cmd, input logic [39:0] addr,
+    task automatic bfm_cache_exec(input logic [4:0] cmd, input logic [39:0] addr,
                                   input logic [1:0] size, input logic [63:0] wdata,
                                   output logic [63:0] rdata, output bit err);
         u_top.u_cpu_top.g_bfm.u_cpu_bfm.dc_cmd_cmd   = cmd;

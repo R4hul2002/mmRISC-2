@@ -157,6 +157,8 @@ _start:
     csrw satp, x10
     sfence.vma
 
+    li   t0, 0x80
+    csrs 0x30a, t0                       // menvcfg.CBZE: cbo.zero in S
     li   t0, 3 << 11
     csrc mstatus, t0
     li   t0, 1 << 11
@@ -274,6 +276,20 @@ in_s:
     ld   x15, 0(x22)                     // a load page fault
     TEST_EQ(58, x29, 1)
     TEST_EQ(59, x28, CAUSE_LPAGE)
+
+    // ---- cbo.zero is a store to the translation (Zicboz) ----
+    li   x29, 0
+    li   x21, 0x40002000                 // read only
+    .insn i 0x0F, 2, x0, x21, 4          // cbo.zero (x21)
+    TEST_EQ(60, x29, 1)
+    TEST_EQ(61, x28, CAUSE_SPAGE)
+    TEST_EQ_REG(62, x27, x21)
+    li   x29, 0
+    li   x22, 0x40004008                 // not mapped, inside the block
+    .insn i 0x0F, 2, x0, x22, 4
+    TEST_EQ(63, x29, 1)
+    TEST_EQ(64, x28, CAUSE_SPAGE)
+    TEST_EQ_REG(65, x27, x22)            // mtval is rs1, not the block
 
     // ---- execute ----
     la   x10, exec_probe

@@ -408,6 +408,8 @@ Sign extension is done on the CPU side.
 
 ### 5.3 Commands
 
+`d_req_cmd` is 5 bits wide (4 until 2026-10, when `ZERO` took the first value past 15).
+
 | Value | Name | Contents |
 |---|---|---|
 | 0 | `LOAD` | Read |
@@ -418,6 +420,7 @@ Sign extension is done on the CPU side.
 | 13 | `FENCE` | Waits for outstanding bus accesses to complete |
 | 14 | `FLUSH` | Writes back all lines and invalidates |
 | 15 | `STWTHR` | Write-through, no allocate (for the debug port, 4.7) |
+| 16 | `ZERO` | `cbo.zero` (Zicboz, 2026-10): the 64-byte line around `d_req_addr` becomes zero, without reading it from memory. A hit writes the eight words in stage 1, one a cycle from its second cycle, and makes the line dirty; a miss takes an MSHR whose fill makes zero beats itself instead of asking the bus (`ms_zero`), with the victim copied out as for any miss. Answered when taken, as nothing can fail. It does not join a fill already under way for its line: it waits for it and zeroes the line as a hit. Below `MEM_BASE` it is an error (the core raises a store access fault before it gets here) |
 
 ### 5.4 LR/SC rules
 

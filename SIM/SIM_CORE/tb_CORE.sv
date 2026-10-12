@@ -63,7 +63,7 @@ module tb_CORE;
     logic                   d_req_valid, d_req_ready, d_resp_valid, d_resp_error;
     logic [PADDR_WIDTH-1:0] d_req_addr, d_req_paddr;
     logic [1:0]             d_req_size;
-    logic [3:0]             d_req_cmd;
+    logic [4:0]             d_req_cmd;
     logic [63:0]            d_req_wdata, d_resp_data;
     logic                   d_req_cancel;
 

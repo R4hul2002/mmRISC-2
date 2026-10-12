@@ -637,7 +637,7 @@ module tb_SYS
     int  pend_len[2][32];
     bit  pend_m  [2][32];
 
-    function automatic int wk_of(input logic [3:0] cmd, input logic [63:0] pa);
+    function automatic int wk_of(input logic [4:0] cmd, input logic [63:0] pa);
         if (pa < 64'(MEM_BASE))  return WK_IO;
         if (cmd == 4'd0)         return WK_LOAD;
         if (cmd == 4'd1)         return WK_STORE;
@@ -694,7 +694,7 @@ module tb_SYS
             .imm (), .alu_op (), .a_uw (), .a_shift (), .a_sel (), .b_sel (), .word_op (),
             .is_branch (), .is_jal (), .is_jalr (), .br_op (), .is_mdu (), .mdu_op (),
             .is_load (tr_is_load), .is_store (), .mem_cmd (), .mem_size (), .mem_signed (),
-            .is_fence (), .is_fence_i (), .is_ecall (), .is_ebreak (), .is_mret (), .is_sret (),
+            .is_fence (), .is_fence_i (), .is_cbo_zero (), .is_ecall (), .is_ebreak (), .is_mret (), .is_sret (),
             .is_sfence (), .is_wfi (), .illegal (),
             .is_fp (), .fp_arith (), .fp_op (), .fp_fmt (), .fp_rm (),
             .use_fs1 (tr_use_fs1), .use_fs2 (tr_use_fs2), .use_fs3 (tr_use_fs3),

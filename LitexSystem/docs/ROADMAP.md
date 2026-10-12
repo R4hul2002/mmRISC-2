@@ -133,7 +133,7 @@ WNS is +0.113 ns. Before adding logic with a large theme, deal with the paths th
 | # | Theme | Size | Contents |
 |---|---|---|---|
 | F1 | Zbs (single-bit operations) | Small | `bset` / `bclr` / `binv` / `bext`. With Zba / Zbb it completes the B extension. Only additions to the ALU |
-| F2 | Zicboz (`cbo.zero`) | Medium | The kernel already has `CONFIG_RISCV_ISA_ZICBOZ=y`. Zeroing pages allocates the D$ line as zeros without reading it from memory, cutting the reads at every fork, exec and page fault. Adds a new instruction to the D$. Goes well with M1 |
+| F2 | Zicboz (`cbo.zero`) | Medium | **Done (2026-10-12, decision 76 of `CPU_CORE_SPEC.md`; board to follow).** The kernel already has `CONFIG_RISCV_ISA_ZICBOZ=y`. Zeroing pages allocates the D$ line as zeros without reading it from memory, cutting the reads at every fork, exec and page fault. Adds a new instruction to the D$. Goes well with M1 |
 | F3 | Zbc (carry-less multiply) | Small to medium | The kernel has `CONFIG_RISCV_ISA_ZBC=y`. Used by CRC32 (ext4 metadata). Add to the MDU as a multi-cycle operation |
 | (M2) | Zicbop | | Put under M |
 
@@ -142,7 +142,7 @@ WNS is +0.113 ns. Before adding logic with a large theme, deal with the paths th
 | # | Theme | Size | Contents |
 |---|---|---|---|
 | G2 | Range matching of triggers (match 1, NAPOT) | Small | Today only exact matches, so gdb's `watch` stops only on accesses to the first address of a variable |
-| D2 | `perf` with function names | Small to medium | Build elfutils statically and add it. `perf report` then works per function of the kernel and user programs. Needed to follow M0 down to "which functions wait on misses" |
+| D2 | `perf` with function names | Small to medium | **Done (2026-10-12): `scripts/build_perf_libs.sh` (zlib, libelf), `build_perf.sh` uses them; `perf.sh` reports CoreMark and a fork / exec loop by function. On the board to follow.** Build elfutils statically and add it. `perf report` then works per function of the kernel and user programs. Needed to follow M0 down to "which functions wait on misses" |
 
 ### C. Large themes (on hold)
 

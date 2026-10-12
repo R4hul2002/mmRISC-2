@@ -132,7 +132,7 @@ module CPU_BFM
         output logic [AXI4_ADDR_WIDTH-1:0]   d_req_addr,
         output logic [AXI4_ADDR_WIDTH-1:0]   d_req_paddr,
         output logic [1:0]                   d_req_size,
-        output logic [3:0]                   d_req_cmd,
+        output logic [4:0]                   d_req_cmd,
         output logic [63:0]                  d_req_wdata,
         input  logic                         d_resp_valid,
         input  logic [63:0]                  d_resp_data,
@@ -167,7 +167,7 @@ module CPU_BFM
     // Same 4-phase handshake as cmd_* below.
     //-----------------------------------------------------------------
     logic                        dc_cmd_valid, dc_cmd_done;
-    logic [3:0]                  dc_cmd_cmd;    // cache command (0 LOAD .. 15 STWTHR)
+    logic [4:0]                  dc_cmd_cmd;    // cache command (0 LOAD .. 15 STWTHR)
     logic [1:0]                  dc_cmd_size;
     logic [AXI4_ADDR_WIDTH-1:0]  dc_cmd_addr;
     logic [63:0]                 dc_cmd_wdata, dc_cmd_rdata;
@@ -182,7 +182,7 @@ module CPU_BFM
 
     initial begin
         dc_cmd_valid = 1'b0;
-        dc_cmd_cmd   = 4'd0;
+        dc_cmd_cmd   = 5'd0;
         dc_cmd_size  = 2'd3;
         dc_cmd_addr  = '0;
         dc_cmd_wdata = '0;
