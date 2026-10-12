@@ -1713,3 +1713,24 @@ arbiter's select into the L2 in one cycle.
 - T6 would take it away: register the DTLB's fault in EX as it is and make the exception in MR from that
   flip-flop (as T2 did for the miss), so that `ex_exc` (into `nx_mr_wr` and the cause) no longer has the
   translation in it. Left while the core has 0.3 ns.
+
+## 43. T6, Zicboz: +0.393 ns (2026-10-12)
+
+T6 (the DTLB's fault taken into a flip-flop and raised in MR, decision 75 of `CPU_CORE_SPEC.md`) and Zicboz
+(`cbo.zero`, decision 76: the command of the cache port 5 bits wide, a zero fill in the D$).
+
+| | Section 42 | This version |
+|---|---|---|
+| WNS | +0.344 ns | **+0.393 ns** |
+| WHS | +0.041 ns | +0.008 ns |
+| LUT | 46,470 (73.3 %) | 45,782 (72.2 %) |
+| FF | 26,176 (20.6 %) | 26,183 (20.7 %) |
+| Slices | 84.9 % (13,457) | 85.7 % (13,583) |
+
+- **The path of T6 is gone**: nothing ends in `mr_exc_cause_r` / `mr_exc_mem` / `fwd_a_mr` any more.
+- The worst is what T2 added (18 levels, 76 % routing, +0.393 ns): `d_resp_data` → forwarding from MA → EX's
+  address add → DTLB compare → `d_hit` → `d_tr_ready` → the CE of `mr_paddr`. That CE is `ex_advance` or "MR
+  waits for the DTLB and it answers now" (`mr_tlb_wait & d_tr_ready`); the second term brings the compare in,
+  although while MR waits the DTLB is given MR's address. Taking `d_tr_paddr` and the fault in every cycle MR
+  waits (they are only used once it stops waiting) would take the compare off the CE (candidate T7). Nothing of
+  Zicboz is near the top.

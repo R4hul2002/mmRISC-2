@@ -127,7 +127,7 @@ WNS は +0.113 ns。大きなテーマで論理を足す前に、わかってい
 | # | テーマ | 規模 | 中身 |
 |---|---|---|---|
 | F1 | Zbs(1 ビット操作) | 小 | `bset` / `bclr` / `binv` / `bext`。Zba / Zbb と合わせて B 拡張がそろう。ALU に足すだけ |
-| F2 | Zicboz(`cbo.zero`) | 中 | **実施(2026-10-12、`CPU_CORE_SPEC_J.md` の決定 76。実機はこのあと)。** カーネルはもう `CONFIG_RISCV_ISA_ZICBOZ=y`。ページのゼロ埋めで、メモリから行を読まずに D$ の行をゼロで確保する。fork・exec・ページフォルトのたびの読み出しが減る。D$ に新しい命令を足す。M1 と相性がよい |
+| F2 | Zicboz(`cbo.zero`) | 中 | **実施(2026-10-12、`CPU_CORE_SPEC_J.md` の決定 76。`BENCH_J.md` 23 章: 実機で `forkexec` −1.8 %、D$ の読み込み −9 %、ストアの待ちは半分)。** カーネルはもう `CONFIG_RISCV_ISA_ZICBOZ=y`。ページのゼロ埋めで、メモリから行を読まずに D$ の行をゼロで確保する。fork・exec・ページフォルトのたびの読み出しが減る。D$ に新しい命令を足す。M1 と相性がよい |
 | F3 | Zbc(キャリーなし乗算) | 小〜中 | カーネルは `CONFIG_RISCV_ISA_ZBC=y`。CRC32(ext4 のメタデータ)が使う。MDU に多サイクルで足す |
 | (M2) | Zicbop | | M にまとめた |
 
@@ -136,7 +136,7 @@ WNS は +0.113 ns。大きなテーマで論理を足す前に、わかってい
 | # | テーマ | 規模 | 中身 |
 |---|---|---|---|
 | G2 | トリガの範囲一致(match 1、NAPOT) | 小 | いまは完全一致だけなので、gdb の `watch` は変数の先頭アドレスへのアクセスでしか止まらない |
-| D2 | 関数名の出る `perf` | 小〜中 | **実施(2026-10-12): `scripts/build_perf_libs.sh`(zlib、libelf)、`build_perf.sh` がそれを使う。`perf.sh` が CoreMark と fork / exec のループを関数ごとに出す。実機はこのあと。** elfutils を静的に作って足す。`perf report` がカーネルとユーザの関数単位になる。M0 で「どの関数がミスで待つか」まで追うなら要る |
+| D2 | 関数名の出る `perf` | 小〜中 | **実施(2026-10-12): `scripts/build_perf_libs.sh`(zlib、libelf)、`build_perf.sh` がそれを使う。`perf.sh` が CoreMark と fork / exec のループを関数ごとに出す。カーネルの関数名も出る(`BENCH_J.md` 23 章)。** elfutils を静的に作って足す。`perf report` がカーネルとユーザの関数単位になる。M0 で「どの関数がミスで待つか」まで追うなら要る |
 
 ### C. 大きなテーマ(保留)
 

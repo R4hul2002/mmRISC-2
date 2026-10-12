@@ -1085,3 +1085,32 @@ change since).
   from run to run since section 18, and its two counts of event `rb` disagree again (5.5 against 6.2 %).
 - Since M0 (18.1) the memory themes (M5, M1, `FAST_READ`) took the kernel loads 5 to 9 % down (`tftp` 2.900 →
   2.660, −8.3 %; `sdread` 2.900 → 2.678, −7.7 %; `forkexec` 2.250 → 2.080, −7.6 %).
+
+## 23. Zicboz and perf by function (F2, D2, 2026-10-12, board)
+
+`workload.sh` and `perf.sh` on the bitstream of TIMING 43: T6 (no cycle changed), Zicboz (decision 76 of
+`CPU_CORE_SPEC.md`; the device tree of the new `fw_jump.bin` names it, so Linux zeroes its pages with
+`cbo.zero`), and `perf` with libelf (D2). Against 22.1:
+
+| Load | CPI | Change | D$ fills / 1000 instr. | MA waits for stores | L2 reads / 1000 instr. |
+|---|---|---|---|---|---|
+| `gunzip` | 1.246 → 1.245 | −0.1 % | 3.55 → 3.40 | 0.99 → 0.94 % | 4.19 → 4.16 |
+| `md5sum` | 1.133 → 1.133 | 0 | 2.92 → 2.99 | 2.54 → 2.42 % | 4.06 → 4.11 |
+| `awk` | 1.573 → 1.545 | (*) | 2.60 → 1.89 | 1.36 → 1.77 % | 3.13 → 3.12 |
+| `ls -lR` | 2.012 → 2.009 | −0.1 % | 15.13 → 15.11 | 3.23 → 2.74 % | 46.05 → 46.24 |
+| `ext4read` | 2.363 → 2.370 | +0.3 % | 22.26 → 22.75 | 7.24 → 7.16 % | 68.56 → 69.07 |
+| `sdread` | 2.678 → 2.657 | −0.8 % | 28.07 → 28.34 | 10.54 → 10.53 % | 72.33 → 72.58 |
+| `forkexec` | 2.080 → 2.042 | **−1.8 %** | 17.84 → **16.29** | 6.53 → **3.34 %** | 36.32 → 34.72 |
+| `tftp` | 2.660 → 2.701 | +1.5 % (**) | 31.23 → 31.66 | 3.39 → 3.38 % | 96.75 → 97.87 |
+
+- **`forkexec` is where pages are zeroed**: its D$ fills went down by 9 % and its stores waiting in MA halved (the
+  stores of the old `clear_page`, each a line read from memory first), 1.8 % on the CPI. The other loads zero few
+  pages and stay within their range.
+- (*) `awk` moves as in 21.2 and 22.1. (**) `tftp`'s DTLB walks went from 10.4 to 12.8 per 1000 instructions,
+  the swing noted since section 14 (about +0.035 CPI at 15 cycles each, as much as the change).
+
+**`perf` by function** (`perf.sh`): CoreMark's own functions (`core_bench_list` 22 %, `core_state_transition`
+21 %, `matrix_mul_matrix_bitextract` 14 %, ...), and the kernel's under the fork / exec loop: `memcpy` 3.6 %,
+`next_uptodate_folio` 3.4 %, `folio_add_file_rmap_ptes` 2.8 %, `handle_page_fault` 1.9 %, `filemap_map_pages`
+1.9 %, ..., `clear_page` 1.3 % (now with `cbo.zero`), `crc32c` 0.7 % (F3 would do it with Zbc). BusyBox shows
+addresses only: it is stripped. CoreMark on this bitstream: CPI 1.123 (1.134 in section 13).
