@@ -1061,3 +1061,27 @@ so the new path is short.
 | SIM_CACHE: D$ load misses / store misses in a row | 12.0 / 10.6 | 11.0 / 9.7 |
 
 The prefetch stays off.
+
+### 22.1 On the board (2026-10-12)
+
+`workload.sh` on the bitstream of TIMING 42, against the run of TIMING 41 (21.2; `FAST_READ` is the only
+change since).
+
+| Load | CPI | Change | Front end empty | Fills outstanding (fill1%) |
+|---|---|---|---|---|
+| `gunzip` | 1.268 → 1.246 | −1.7 % | 2.8 → 3.0 % | 4.50 → 4.12 % |
+| `md5sum` | 1.135 → 1.133 | −0.2 % | 1.9 → 1.8 % | 6.49 → 6.26 % |
+| `awk` | 1.592 → 1.573 | (*) | 9.6 → 9.9 % | 3.03 → 2.82 % |
+| `ls -lR` | 2.048 → 2.012 | −1.8 % | 23.3 → 22.4 % | 30.97 → 29.58 % |
+| `ext4read` | 2.445 → 2.363 | **−3.4 %** | 24.4 → 23.2 % | 36.07 → 34.22 % |
+| `sdread` | 2.734 → 2.678 | −2.0 % | 21.7 → 20.7 % | 39.97 → 37.99 % |
+| `forkexec` | 2.116 → 2.080 | −1.7 % | 20.8 → 20.3 % | 39.20 → 38.19 % |
+| `tftp` | 2.757 → 2.660 | **−3.5 %** | 32.4 → 30.7 % | 48.37 → 45.97 % |
+
+- **The kernel loads gain 1.7 to 3.5 %**, as the Linux boot of the simulation with the board's latency
+  predicted (−2.7 %): the more the I$ and D$ miss, the more cycles of grant were paid, and the front end and
+  the time fills are outstanding go down with them. The user loads, which miss little, move by 0 to 2 %.
+- (*) `awk` is still not a clean measurement: its D$ misses move between 1.8 and 3.0 per 1000 instructions
+  from run to run since section 18, and its two counts of event `rb` disagree again (5.5 against 6.2 %).
+- Since M0 (18.1) the memory themes (M5, M1, `FAST_READ`) took the kernel loads 5 to 9 % down (`tftp` 2.900 →
+  2.660, −8.3 %; `sdread` 2.900 → 2.678, −7.7 %; `forkexec` 2.250 → 2.080, −7.6 %).

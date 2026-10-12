@@ -1690,3 +1690,26 @@ PMP checkers no longer make it in every cycle. The add was the first 4.7 ns of t
   instruction that writes a register from EX is never a memory access, whose fault is the only thing the
   DTLB adds; `ex_exc_pre` would do (candidate T6, not needed while the core has a nanosecond).
 - Next: the FPU (`q_sp` → `r_sp`, `p0_c` → `p1_c`) and the I$ (`fill_addr` → its tag RAM), all at +1.233 ns.
+
+## 42. The read granted in the cycle of the request (FAST_READ): +0.344 ns (2026-10-12)
+
+`FAST_READ` of `BUS_ARB` in `CPU_CACHE` (`BENCH.md` 22): with no read granted, the cache that raises
+`arvalid` has the bus in that cycle, so the address now goes from the caches' AR flip-flops through the
+arbiter's select into the L2 in one cycle.
+
+| | Section 41 | This version |
+|---|---|---|
+| WNS | +0.896 ns (LiteX's reset synchronizer; the core +0.977 ns) | **+0.344 ns** (the core) |
+| WHS | +0.052 ns | +0.041 ns |
+| LUT | 46,455 (73.3 %) | 46,470 (73.3 %) |
+| FF | 26,178 (20.7 %) | 26,176 (20.6 %) |
+| Slices | 89.0 % (14,106) | **84.9 % (13,457)** |
+
+- **The new path is not near the top**: nothing of the arbiter or of the L2 is among the worst paths.
+- The worst is the family of section 41 again (candidate T6): the D$'s answer `d_resp_data` → forwarding from
+  MA → EX's address add → DTLB compare and permissions → the fault of the translation in `ex_exc` → the CE of
+  `mr_exc_cause_r` / `mr_exc_mem` (18 levels, **77 % routing**), +0.344 ns against +1.022 ns in section 41 with
+  the same logic: placement. Next the PMP → D$ ROB family (+0.837 ns).
+- T6 would take it away: register the DTLB's fault in EX as it is and make the exception in MR from that
+  flip-flop (as T2 did for the miss), so that `ex_exc` (into `nx_mr_wr` and the cause) no longer has the
+  translation in it. Left while the core has 0.3 ns.
