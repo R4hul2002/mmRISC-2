@@ -13,6 +13,8 @@
 //     overflow one, a divide 2 + steps after it, where the steps are what
 //     is left after the early out (CPU_CORE_SPEC.md decisions 61, 62); so a
 //     slower unit fails here, not only in the benchmarks
+//   - the carry-less multiplies of Zbc (CLMUL / CLMULH / CLMULR) against the
+//     definition of the specification, five cycles each
 //   - the answer held while the core does not take it (ack late), and
 //   - kill in the middle of an operation or while the answer is held: the
 //     unit must be idle afterwards and the next operation right
@@ -29,7 +31,7 @@ module tb_MDU;
     always #10 clk = ~clk;
 
     logic        start, kill, word_op, ack;
-    logic [2:0]  op;
+    logic [3:0]  op;
     logic [63:0] rs1, rs2;
     logic        busy, done;
     logic [63:0] result;
@@ -55,6 +57,19 @@ module tb_MDU;
     //-----------------------------------------------------------------
     function automatic logic [63:0] sx32(input logic [31:0] v);
         return {{32{v[31]}}, v};
+    endfunction
+
+    // the carry-less product, as the Zbc specification defines it
+    function automatic logic [63:0] clmul_ref(input logic [1:0] f, input logic [63:0] a,
+                                              input logic [63:0] b);
+        logic [63:0] x;
+        x = 64'd0;
+        case (f)
+            2'd1: for (int i = 0; i < 64; i++) if ((b >> i) & 1) x = x ^ (a << i);        // CLMUL
+            2'd3: for (int i = 1; i < 64; i++) if ((b >> i) & 1) x = x ^ (a >> (64 - i)); // CLMULH
+            default: for (int i = 0; i < 64; i++) if ((b >> i) & 1) x = x ^ (a >> (63 - i)); // CLMULR
+        endcase
+        return x;
     endfunction
 
     function automatic logic [63:0] reference(input logic [2:0] o, input logic w,
@@ -180,17 +195,18 @@ module tb_MDU;
 
             // the operation (no 32 bit form of MULH*)
             #1;
-            op      = 3'($urandom_range(0, 7));
-            word_op = (op inside {3'd1, 3'd2, 3'd3}) ? 1'b0 : 1'($urandom_range(0, 1));
+            op      = 4'($urandom_range(0, 7));
+            if ($urandom_range(0, 3) == 0) op = 4'($urandom_range(9, 11));    // Zbc
+            word_op = (op inside {4'd1, 4'd2, 4'd3} || op[3]) ? 1'b0 : 1'($urandom_range(0, 1));
             rs1     = operand();
             rs2     = operand();
-            expect_v = reference(op, word_op, rs1, rs2);
+            expect_v = op[3] ? clmul_ref(op[1:0], rs1, rs2) : reference(op[2:0], word_op, rs1, rs2);
             if (busy || done) fail("not idle before a start");
 
             // one operation in sixteen is killed somewhere along the way
             kill_at = ($urandom_range(0, 15) == 0) ? $urandom_range(0, 6) : -1;
-            want_lat = (op == 3'd0) ? 1 : (op inside {3'd1, 3'd2, 3'd3}) ? 2
-                                        : div_latency(op, word_op, rs1, rs2);
+            want_lat = op[3] ? 5 : (op == 4'd0) ? 1 : (op inside {4'd1, 4'd2, 4'd3}) ? 2
+                                        : div_latency(op[2:0], word_op, rs1, rs2);
 
             start = 1'b1;
             @(posedge clk);

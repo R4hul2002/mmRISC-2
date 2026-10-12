@@ -27,7 +27,7 @@ and SD card checked at the same time) passes with the L2 cache as well (2026-10-
 | | |
 |---|---|
 | Performance (board, under Linux) | **2.786 CoreMark/MHz** (built with Zba/Zbb; 2.498 for rv64gc), **1.496 DMIPS/MHz**. +76 % / +82 % from the 1.584 / 0.823 of the first home-made version. Both are `-O2` values; built with the options that make it fastest, **3.025 CoreMark/MHz** and 1.542 DMIPS/MHz (section 17 of `LitexSystem/docs/BENCH.md`). Floating point: FIR 65.6 MFLOPS, matrix multiply 41.2 MFLOPS (assembler, 50 MHz). The L2 cache makes kernel-heavy loads (TFTP, SD reads, `ls -lR`) 1.5 to 1.7 times faster |
-| ISA | RV64IMAFDC, Zicsr, Zifencei, Zicntr, Zihpm, **Zba, Zbb, Zicond**, Zihintpause, Zihintntl, **Zicboz**, M / S / U, Sv39, PMP 8 entries |
+| ISA | RV64IMAFDC, Zicsr, Zifencei, Zicntr, Zihpm, **Zba, Zbb, Zbs, Zbc, Zicond**, Zihintpause, Zihintntl, **Zicboz**, M / S / U, Sv39, PMP 8 entries |
 | Privileged extensions | **Sstc** (S-mode timer), **Sscofpmf** (overflow interrupts of the performance counters), **Smcntrpmf**, **Sdtrig** (4 debug triggers), privileged spec 1.12 |
 | Performance counters | `hpmcounter3` to `6`, 19 events (cache, L2 and TLB misses, branch mispredictions, reasons for stalls). Usable with Linux's `perf stat` / `perf record` |
 | Debug | JTAG / cJTAG (Debug Spec 1.0). Halt / step / registers / memory, software and hardware breakpoints and watchpoints with OpenOCD / gdb (they can be put on a running Linux kernel too) |
@@ -159,10 +159,10 @@ official tests, down to confirming that the tests find deliberately broken RTL (
 |---|---|---|
 | `cd SIM/SIM_CORE && make` | 33 home-made tests of the CPU core (instructions, traps, MMU, PMP, debug, branch prediction, triggers, performance counters and more) | All PASS |
 | `cd SIM/SIM_CORE && make stress` | The same tests with back pressure on both cache ports | All PASS |
-| `cd SIM/SIM_CORE && make riscv-tests` | The official riscv-tests (rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzicond / mi / si) | 167 PASS, 4 known failures (tests that need unimplemented features) |
-| `cd SIM/SIM_CORE && make riscv-tests-v` | The same tests in the virtual memory (Sv39) environment | 143 PASS, 4 known failures |
+| `cd SIM/SIM_CORE && make riscv-tests` | The official riscv-tests (rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzbs / uzbc / uzicond / mi / si) | 178 PASS, 4 known failures (tests that need unimplemented features) |
+| `cd SIM/SIM_CORE && make riscv-tests-v` | The same tests in the virtual memory (Sv39) environment | 154 PASS, 4 known failures |
 | `cd SIM/SIM_CORE && make mdu / clint / plic` | Multiply / divide (reference model, 200,000 operations), CLINT (4 harts), PLIC | PASS |
-| `cd SIM/SIM_CORE && ./bug_inject.sh` | 331 bug injections (with and without back pressure) | All detected |
+| `cd SIM/SIM_CORE && ./bug_inject.sh` | 339 bug injections (with and without back pressure) | All detected |
 | `cd SIM/SIM_SYS && make` | Core + real L1 / L2 caches + AXI + DMA port (26 home-made tests, 4 programs for DMA, PMU and others). `PARAMS=-GL2_SIZE=0` for no L2 | All PASS (with / without L2) |
 | `cd SIM/SIM_SYS && make riscv-tests` | riscv-tests through the real caches | 133 PASS, 4 known failures |
 | `cd SIM/SIM_SYS && ./bug_inject.sh` | 23 bug injections (including the cycle bounds of the floating point kernels, `bench/fploop`, and the memory wait events of M0) | All detected |

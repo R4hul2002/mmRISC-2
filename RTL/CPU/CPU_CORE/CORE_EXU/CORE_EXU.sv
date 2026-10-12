@@ -9,8 +9,11 @@
 // operand in front of them: its low half zero extended (a_uw, the .uw
 // forms) and a shift left by one to three (a_shift, sh1add .. sh3add).
 // Zbb has operations of its own, and so has Zicond (czero.eqz / czero.nez:
-// rs1, or zero by whether rs2 is zero). None of this touches the branch
-// comparison, the target or the address of a memory access.
+// rs1, or zero by whether rs2 is zero), and so has Zbs (bset / bclr / binv
+// / bext: one bit of rs1, the one rs2 or the immediate names, set, cleared,
+// inverted or taken out; bext is the right shift's bit 0). None of this
+// touches the branch comparison, the target or the address of a memory
+// access.
 //---------------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -24,7 +27,7 @@ module CORE_EXU
         input  logic [63:0] imm,
 
         // control from the decoder
-        input  logic [4:0]  alu_op,
+        input  logic [5:0]  alu_op,
         input  logic        a_uw,         // rs1 : the low half, zero extended
         input  logic [1:0]  a_shift,      // rs1 : shifted left by this much
         input  logic [1:0]  a_sel,
@@ -43,37 +46,42 @@ module CORE_EXU
         output logic [63:0] mem_addr      // rs1 + imm
     );
 
-    localparam logic [4:0] ALU_ADD  = 5'd0;
-    localparam logic [4:0] ALU_SUB  = 5'd1;
-    localparam logic [4:0] ALU_SLL  = 5'd2;
-    localparam logic [4:0] ALU_SLT  = 5'd3;
-    localparam logic [4:0] ALU_SLTU = 5'd4;
-    localparam logic [4:0] ALU_XOR  = 5'd5;
-    localparam logic [4:0] ALU_SRL  = 5'd6;
-    localparam logic [4:0] ALU_SRA  = 5'd7;
-    localparam logic [4:0] ALU_OR   = 5'd8;
-    localparam logic [4:0] ALU_AND  = 5'd9;
+    localparam logic [5:0] ALU_ADD  = 6'd0;
+    localparam logic [5:0] ALU_SUB  = 6'd1;
+    localparam logic [5:0] ALU_SLL  = 6'd2;
+    localparam logic [5:0] ALU_SLT  = 6'd3;
+    localparam logic [5:0] ALU_SLTU = 6'd4;
+    localparam logic [5:0] ALU_XOR  = 6'd5;
+    localparam logic [5:0] ALU_SRL  = 6'd6;
+    localparam logic [5:0] ALU_SRA  = 6'd7;
+    localparam logic [5:0] ALU_OR   = 6'd8;
+    localparam logic [5:0] ALU_AND  = 6'd9;
     // Zbb
-    localparam logic [4:0] ALU_ANDN = 5'd10;
-    localparam logic [4:0] ALU_ORN  = 5'd11;
-    localparam logic [4:0] ALU_XNOR = 5'd12;
-    localparam logic [4:0] ALU_MIN  = 5'd13;
-    localparam logic [4:0] ALU_MINU = 5'd14;
-    localparam logic [4:0] ALU_MAX  = 5'd15;
-    localparam logic [4:0] ALU_MAXU = 5'd16;
-    localparam logic [4:0] ALU_ROL  = 5'd17;
-    localparam logic [4:0] ALU_ROR  = 5'd18;
-    localparam logic [4:0] ALU_CLZ  = 5'd19;
-    localparam logic [4:0] ALU_CTZ  = 5'd20;
-    localparam logic [4:0] ALU_CPOP = 5'd21;
-    localparam logic [4:0] ALU_SEXTB= 5'd22;
-    localparam logic [4:0] ALU_SEXTH= 5'd23;
-    localparam logic [4:0] ALU_ZEXTH= 5'd24;
-    localparam logic [4:0] ALU_ORCB = 5'd25;
-    localparam logic [4:0] ALU_REV8 = 5'd26;
+    localparam logic [5:0] ALU_ANDN = 6'd10;
+    localparam logic [5:0] ALU_ORN  = 6'd11;
+    localparam logic [5:0] ALU_XNOR = 6'd12;
+    localparam logic [5:0] ALU_MIN  = 6'd13;
+    localparam logic [5:0] ALU_MINU = 6'd14;
+    localparam logic [5:0] ALU_MAX  = 6'd15;
+    localparam logic [5:0] ALU_MAXU = 6'd16;
+    localparam logic [5:0] ALU_ROL  = 6'd17;
+    localparam logic [5:0] ALU_ROR  = 6'd18;
+    localparam logic [5:0] ALU_CLZ  = 6'd19;
+    localparam logic [5:0] ALU_CTZ  = 6'd20;
+    localparam logic [5:0] ALU_CPOP = 6'd21;
+    localparam logic [5:0] ALU_SEXTB= 6'd22;
+    localparam logic [5:0] ALU_SEXTH= 6'd23;
+    localparam logic [5:0] ALU_ZEXTH= 6'd24;
+    localparam logic [5:0] ALU_ORCB = 6'd25;
+    localparam logic [5:0] ALU_REV8 = 6'd26;
     // Zicond
-    localparam logic [4:0] ALU_CZEQZ= 5'd27;
-    localparam logic [4:0] ALU_CZNEZ= 5'd28;
+    localparam logic [5:0] ALU_CZEQZ= 6'd27;
+    localparam logic [5:0] ALU_CZNEZ= 6'd28;
+    // Zbs
+    localparam logic [5:0] ALU_BSET = 6'd29;
+    localparam logic [5:0] ALU_BCLR = 6'd30;
+    localparam logic [5:0] ALU_BINV = 6'd31;
+    localparam logic [5:0] ALU_BEXT = 6'd32;
 
     localparam logic [1:0] A_RS1  = 2'd0;
     localparam logic [1:0] A_PC   = 2'd1;
@@ -87,6 +95,8 @@ module CORE_EXU
     logic [63:0] a_cnt;           // what clz / ctz / cpop count in
     logic [6:0]  n_clz, n_ctz, n_pop;
     logic [63:0] rot_l, rot_r;
+    logic [63:0] srl_v;           // the right shift, also for bext
+    logic [63:0] bmask;           // Zbs : the bit rs2 / the immediate names
     logic [31:0] a32;
 
     // counts over 64 bits; a 32 bit form puts its half where they see it
@@ -139,13 +149,16 @@ module CORE_EXU
             rot_r = (op_a >> shamt) | (op_a << (7'd64 - {1'b0, shamt}));
         end
 
+        srl_v = sh_src >> shamt;
+        bmask = 64'd1 << op_b[5:0];
+
         case (alu_op)
             ALU_SUB:  res = op_a - op_b;
             ALU_SLL:  res = sh_src << shamt;
             ALU_SLT:  res = {63'd0, ($signed(op_a) < $signed(op_b))};
             ALU_SLTU: res = {63'd0, (op_a < op_b)};
             ALU_XOR:  res = op_a ^ op_b;
-            ALU_SRL:  res = sh_src >> shamt;
+            ALU_SRL:  res = srl_v;
             ALU_SRA:  res = $signed(sh_src) >>> shamt;
             ALU_OR:   res = op_a | op_b;
             ALU_AND:  res = op_a & op_b;
@@ -168,6 +181,10 @@ module CORE_EXU
             ALU_REV8: for (int i = 0; i < 8; i++) res[8*i +: 8] = op_a[8*(7-i) +: 8];
             ALU_CZEQZ:res = (op_b == 64'd0) ? 64'd0 : op_a;
             ALU_CZNEZ:res = (op_b != 64'd0) ? 64'd0 : op_a;
+            ALU_BSET: res = op_a |  bmask;
+            ALU_BCLR: res = op_a & ~bmask;
+            ALU_BINV: res = op_a ^  bmask;
+            ALU_BEXT: res = {63'd0, srl_v[0]};
             default:  res = a_add + op_b;             // ALU_ADD, add.uw, sh*add
         endcase
 

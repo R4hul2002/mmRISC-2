@@ -265,7 +265,7 @@ module CPU_CORE
     logic [4:0]  dec_rs1, dec_rs2, dec_rd;
     logic        dec_use_rs1, dec_use_rs2, dec_we_rd;
     logic [63:0] dec_imm;
-    logic [4:0]  dec_alu_op;
+    logic [5:0]  dec_alu_op;
     logic        dec_a_uw;
     logic [1:0]  dec_a_shift;
     logic [1:0]  dec_a_sel;
@@ -273,7 +273,7 @@ module CPU_CORE
     logic        dec_is_branch, dec_is_jal, dec_is_jalr;
     logic [2:0]  dec_br_op;
     logic        dec_is_mdu;
-    logic [2:0]  dec_mdu_op;
+    logic [3:0]  dec_mdu_op;
     logic        dec_is_load, dec_is_store;
     logic [4:0]  dec_mem_cmd;
     logic [1:0]  dec_mem_size;
@@ -443,14 +443,14 @@ module CPU_CORE
     logic [31:0] ex_insn;
     logic [4:0]  ex_rs1, ex_rs2, ex_rd;
     logic        ex_we_rd, ex_b_sel, ex_word_op;
-    logic [4:0]  ex_alu_op;
+    logic [5:0]  ex_alu_op;
     logic        ex_a_uw;
     logic [1:0]  ex_a_shift;
     logic [1:0]  ex_a_sel;
     logic [2:0]  ex_br_op;
     logic        ex_is_branch, ex_is_jal, ex_is_jalr, ex_is_rvc;
     logic        ex_is_mdu;
-    logic [2:0]  ex_mdu_op;
+    logic [3:0]  ex_mdu_op;
     logic        ex_is_load, ex_is_store;
     logic [4:0]  ex_mem_cmd;
     logic [1:0]  ex_mem_size;
@@ -1759,7 +1759,7 @@ module CPU_CORE
             ex_rs2        <= 5'd0;
             ex_rd         <= 5'd0;
             ex_we_rd      <= 1'b0;
-            ex_alu_op     <= 5'd0;
+            ex_alu_op     <= 6'd0;
             ex_a_uw       <= 1'b0;
             ex_a_shift    <= 2'd0;
             ex_a_sel      <= 2'd0;
@@ -1771,7 +1771,7 @@ module CPU_CORE
             ex_is_jalr    <= 1'b0;
             ex_is_rvc     <= 1'b0;
             ex_is_mdu     <= 1'b0;
-            ex_mdu_op     <= 3'd0;
+            ex_mdu_op     <= 4'd0;
             ex_is_load    <= 1'b0;
             ex_is_store   <= 1'b0;
             ex_mem_cmd    <= 5'd0;
@@ -2071,10 +2071,15 @@ module CPU_CORE
                 mr_fpu     <= 1'b0;
                 mr_tlb_wait<= 1'b0;
                 mr_tr_fault<= 2'd0;
-            end else if (mr_tlb_wait && d_tr_ready) begin
-                // MR's address is in the DTLB now (or the walk left a fault
-                // behind): take it, and go on in the next cycle
-                mr_tlb_wait   <= 1'b0;
+            end else if (mr_tlb_wait) begin
+                // MR asks the DTLB with its own address until it answers (or
+                // the walk left a fault behind), and goes on in the cycle
+                // after. The address and the fault are taken in every cycle
+                // it waits, whatever they are: until the answer the fault is
+                // none and the address is not used, and the compare of the
+                // DTLB stays off the enable of mr_paddr (T7,
+                // LitexSystem/docs/TIMING.md 43)
+                mr_tlb_wait   <= ~d_tr_ready;
                 mr_paddr      <= d_tr_paddr;
                 mr_tr_fault   <= d_tr_fault;
             end

@@ -29,9 +29,16 @@
 //   steps, at most 32 or 64. Division by zero and the one overflow case are
 //   answered at once.
 //
-//   op is the funct3 field of the instruction:
+//   Carry-less multiply (Zbc, 2026-10): the 128 bit product of rs1 and rs2
+//   in GF(2), 16 bits of rs2 a cycle (S_CLM, four cycles): each cycle the
+//   accumulator takes the XOR of rs1 shifted by the place of every set bit
+//   of those 16. CLMUL answers its low half, CLMULH its high half, CLMULR
+//   bits 126:63. Linux computes its CRCs with it (crc32c of ext4).
+//
+//   op[2:0] is the funct3 field of the instruction, op[3] marks Zbc:
 //       0 MUL     1 MULH   2 MULHSU  3 MULHU
 //       4 DIV     5 DIVU   6 REM     7 REMU
+//       9 CLMUL  10 CLMULR 11 CLMULH
 //   word_op selects the 32 bit forms (MULW, DIVW, DIVUW, REMW, REMUW).
 //---------------------------------------------------------------------------
 
@@ -44,7 +51,7 @@ module CORE_MDU
 
         input  logic        start,        // begin, one cycle
         input  logic        kill,         // the instruction was flushed
-        input  logic [2:0]  op,
+        input  logic [3:0]  op,
         input  logic        word_op,
         input  logic [63:0] rs1_data,
         input  logic [63:0] rs2_data,
@@ -64,10 +71,11 @@ module CORE_MDU
     localparam logic [2:0] OP_REM    = 3'd6;
     localparam logic [2:0] OP_REMU   = 3'd7;
 
-    typedef enum logic [2:0] {S_IDLE, S_MUL, S_MULH, S_DIVN, S_DIV, S_DONE} state_t;
+    typedef enum logic [2:0] {S_IDLE, S_MUL, S_MULH, S_DIVN, S_DIV, S_DONE, S_CLM} state_t;
     state_t state;
 
     logic [2:0]  op_r;
+    logic        clm_r;           // the operation is a carry-less multiply
     logic        word_r;
 
     //-----------------------------------------------------------------
@@ -75,7 +83,7 @@ module CORE_MDU
     //-----------------------------------------------------------------
     logic a_signed, b_signed;
     always @(*) begin
-        case (op)
+        case (op[2:0])
             OP_MULH:            begin a_signed = 1'b1; b_signed = 1'b1; end
             OP_MULHSU:          begin a_signed = 1'b1; b_signed = 1'b0; end
             OP_MULHU:           begin a_signed = 1'b0; b_signed = 1'b0; end
@@ -167,7 +175,26 @@ module CORE_MDU
         if (word_r)   div_result = {{32{div_result[31]}}, div_result[31:0]};
     end
 
-    assign result = (op_r[2]) ? div_result : mul_result;
+    //-----------------------------------------------------------------
+    // carry-less multiply
+    //-----------------------------------------------------------------
+    logic [127:0] clm_acc, clm_a, clm_step;
+    logic [63:0]  clm_b;
+    always @(*) begin
+        clm_step = clm_acc;
+        for (int j = 0; j < 16; j++)
+            if (clm_b[j]) clm_step = clm_step ^ (clm_a << j);
+    end
+    logic [63:0] clm_result;
+    always @(*) begin
+        case (op_r[1:0])
+            2'd1:    clm_result = clm_acc[63:0];        // CLMUL
+            2'd3:    clm_result = clm_acc[127:64];      // CLMULH
+            default: clm_result = clm_acc[126:63];      // CLMULR
+        endcase
+    end
+
+    assign result = clm_r ? clm_result : (op_r[2]) ? div_result : mul_result;
     assign done   = ((state == S_MUL) && (op_r == OP_MUL)) || (state == S_MULH) ||
                     (state == S_DONE);
     assign busy   = (state != S_IDLE) && !done;
@@ -177,6 +204,10 @@ module CORE_MDU
         if (!rst_n) begin
             state   <= S_IDLE;
             op_r    <= 3'd0;
+            clm_r   <= 1'b0;
+            clm_acc <= 128'd0;
+            clm_a   <= 128'd0;
+            clm_b   <= 64'd0;
             word_r  <= 1'b0;
             pp_ll   <= 64'd0;
             pp_hl   <= 64'd0;
@@ -198,9 +229,17 @@ module CORE_MDU
                 //-----------------------------------------------------
                 S_IDLE: begin
                     if (start) begin
-                        op_r   <= op;
+                        op_r   <= op[2:0];
+                        clm_r  <= op[3];
                         word_r <= word_op;
-                        if (!op[2]) begin
+                        if (op[3]) begin
+                            // carry-less multiply, 16 bits of rs2 a cycle
+                            clm_acc <= 128'd0;
+                            clm_a   <= {64'd0, rs1_data};
+                            clm_b   <= rs2_data;
+                            count   <= 7'd4;
+                            state   <= S_CLM;
+                        end else if (!op[2]) begin
                             // multiply : the four unsigned partial products
                             pp_ll <= {32'd0, a_prep[31:0]}  * {32'd0, b_prep[31:0]};
                             pp_hl <= {32'd0, a_prep[63:32]} * {32'd0, b_prep[31:0]};
@@ -265,6 +304,14 @@ module CORE_MDU
                 //-----------------------------------------------------
                 S_DONE: begin
                     if (ack) state <= S_IDLE;
+                end
+                //-----------------------------------------------------
+                S_CLM: begin
+                    clm_acc <= clm_step;
+                    clm_a   <= clm_a << 16;
+                    clm_b   <= clm_b >> 16;
+                    count   <= count - 7'd1;
+                    if (count == 7'd1) state <= S_DONE;
                 end
                 default: state <= S_IDLE;
             endcase

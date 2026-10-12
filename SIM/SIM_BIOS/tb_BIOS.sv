@@ -312,7 +312,7 @@ module tb_BIOS
     // what happens
     //=================================================================
     `define CORE u_cpu_top.g_core.u_cpu_core
-    int  cycle_count, max_cycles, n_retired, n_traps, n_uart_int, n_orcb, n_stimecmp, n_cbozero;
+    int  cycle_count, max_cycles, n_retired, n_traps, n_uart_int, n_orcb, n_stimecmp, n_cbozero, n_clmul;
     string bios_file, fw_file, image_file, initrd_file;
     int    pcmon;
     bit    linux_mode;
@@ -355,6 +355,11 @@ module tb_BIOS
                 // cbo.zero: Linux zeroes its pages with it (Zicboz)
                 if ((`CORE.trace_insn & 32'hFFF07FFF) == 32'h0040200F)
                     n_cbozero <= n_cbozero + 1;
+                // clmul / clmulr / clmulh: Linux's CRCs with Zbc
+                if (((`CORE.trace_insn & 32'hFE00707F) == 32'h0A001033) ||
+                    ((`CORE.trace_insn & 32'hFE00707F) == 32'h0A002033) ||
+                    ((`CORE.trace_insn & 32'hFE00707F) == 32'h0A003033))
+                    n_clmul <= n_clmul + 1;
                 // a CSR instruction on stimecmp: Linux sets its timer there
                 // itself (Sstc) instead of asking OpenSBI
                 if (((`CORE.trace_insn & 32'h0000007F) == 32'h00000073) &&
@@ -578,6 +583,7 @@ module tb_BIOS
         n_retired   = 0;
         n_orcb      = 0;
         n_cbozero   = 0;
+        n_clmul     = 0;
         n_stimecmp  = 0;
         n_traps     = 0;
         n_uart_int  = 0;
@@ -602,6 +608,7 @@ module tb_BIOS
         if (linux_mode) begin
             $display(" ORC.B retired (Zbb string functions of Linux) : %0d", n_orcb);
             $display(" cbo.zero retired (Zicboz, clear_page of Linux) : %0d", n_cbozero);
+            $display(" clmul* retired (Zbc, the CRCs of Linux)        : %0d", n_clmul);
             $display(" CSR instructions on stimecmp (Sstc)         : %0d", n_stimecmp);
         end
         if (linux_mode && (u_per.tx_tail[8*3-1:0] == "\n# "))

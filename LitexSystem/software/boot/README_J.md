@@ -15,7 +15,7 @@
 
 | ファイル | 出どころ | ロード先 | md5(2026-10-12) |
 |---|---|---|---|
-| `fw_jump.bin` | `scripts/build_opensbi.sh` がここに作る(デバイスツリー入り) | 0x8000_0000 | `a1f61cb7841bb9c261bd1a63ce38f62b` |
+| `fw_jump.bin` | `scripts/build_opensbi.sh` がここに作る(デバイスツリー入り) | 0x8000_0000 | `00dd1f655c43ef3fc5c9b62c2c470e25` |
 | `Image` | Linux カーネル。Rocket 構成で作ったものと同じ設定に、性能カウンタ(`perf`)のための `CONFIG_PERF_EVENTS` / `CONFIG_RISCV_PMU_SBI` を足して作り直したもの(2026-10、`CPU_CORE_SPEC.md` 決定 69) | 0x8020_0000 | `1d886448db1ae0b8e1629cfeba6b605b` |
 | `boot.json` | BIOS が読む配置表。Rocket 構成と同じ | ― | `a1c356008baa859fa615b879d0fa18f3` |
 

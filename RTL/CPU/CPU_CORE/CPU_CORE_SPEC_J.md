@@ -52,7 +52,7 @@ CPU コア本体を定義する。
 | デバッグのトリガ | **Sdtrig**(type 2 の `mcontrol` を 4 本、2026-10、決定 67)。ハードウェアブレークポイント・ウォッチポイント |
 | 条件付きゼロ・ヒント | **Zicond**(`czero.eqz` / `czero.nez`)、**Zihintpause**(PAUSE)、**Zihintntl**(NTL.*)(2026-10、決定 68)。`misa` にビットは無く、デバイスツリーで知らせる |
 | キャッシュブロックのゼロ化 | **Zicboz**(`cbo.zero`、2026-10、決定 76)。Linux はページのゼロ埋めに使う(`clear_page`)。ほかのキャッシュブロック操作(Zicbom)は無い |
-| ビット操作 | **Zba、Zbb**(2026-10、決定 65)。`misa` に該当するビットは無く、ソフトウェアにはデバイスツリー(`riscv,isa-extensions`)で知らせる |
+| ビット操作 | **Zba、Zbb**(2026-10、決定 65)、**Zbs、Zbc**(2026-10、決定 77)。`misa` に該当するビットは無く、ソフトウェアにはデバイスツリー(`riscv,isa-extensions`)で知らせる |
 | 特権 | M / S / U、Sv39(3 段ページテーブル、4KiB/2MiB/1GiB) |
 | `misa` | `0x8000_0000_0014_112d`(= A,C,D,F,I,M,S,U。CPU_TOP のパラメータ、読み出し専用) |
 
@@ -60,7 +60,6 @@ CPU コア本体を定義する。
 
 | 追加候補 | 今やっておくこと |
 |---|---|
-| Zbs(B の残り) | Zba / Zbb は実装済み(2.1)。Zbs(単一ビット操作)は同じ ALU に足せる。いまは不正命令(`t28_bitmanip` がその隣接符号を確かめている) |
 | V 拡張(ベクタ) | オペコード `OP-V (0x57)` と `vset*` を予約。**長レイテンシ・順不同完了**を扱える発行/完了インタフェースを最初から用意する(最初の利用者は FDIV/FSQRT) |
 | カスタム命令 | `custom-0/1/2/3`(0x0B/0x2B/0x5B/0x7B)をデコーダから**アクセラレータポート**へ横流し(9章) |
 | Zicbom 等 | キャッシュに `FLUSH`/`fence.i` はあるので、ライン単位操作を追加する形 |
@@ -1656,3 +1655,5 @@ SIM_SYS(本物のキャッシュ)での内訳: 51014 命令中ロード 9784 (19
 | 74 | PMP の NAPOT のマスク(T4) | **各検査器が毎サイクル計算するのをやめ、`pmpaddr` の隣のレジスタ(`CORE_CSR` の `pmpmask`)に一緒に書いて持つ**。マスク `pmpaddr ^ (pmpaddr + 1)` はレジスタだけで決まるが、その加算(CARRY4 8 段)がこの設計の最悪の経路の頭にあった: `pmpaddr` → 加算 → NAPOT の比較 → 一番小さい一致 → `mr_pmp_fail` → `lsu_e_go` → D$ の取り消し → その ROB(`LitexSystem/docs/TIMING_J.md` 40 章。比較までの 20 ns のうち 4.7 ns)。加算はいまは CSR の書き込みデータの上にあり、そこは 1 サイクルを丸ごと使える。`t13_pmp` の 35〜38(8 バイトの NAPOT 領域。`pmpaddr` が偶数だとマスクは 1 ビット)、変異 M367 / M368(SIM_CORE)。SIM_MMU の `tb_PMP` は `CORE_CSR` と同じやり方でマスクを作る |
 | 75 | 変換のフォールトは MR で例外にする(T6) | **EX は DTLB のフォールトをフリップフロップ(`mr_tr_fault`)に取り、MR がそこから例外を作る。トリガの後、PMP の前**。T2 がミスにしたのと同じ(ウォークが残したフォールトも同じように取る)。`ex_exc` はフォールトを含み、それを通じて DTLB の比較と許可(MA からのフォワーディングとアドレスの加算の後ろ)が、`ex_exc` の行き先すべてに届いていた: MR の原因と `mr_exc_mem` の書き込み(その CE)、`nx_mr_wr`(MR からのフォワーディングの選択)。`LitexSystem/docs/TIMING_J.md` 41・42 章の最悪の経路。フォールトするロードはいま MR で `mr_we_rd` を持ったまま(書き込みは MA で `~mr_exc` により捨てる。PMP と同じ)なので、その後ろでそのレジスタを読む命令はトラップの前に 1 サイクル待つ。それ以外は変わらず、SIM_CORE のどの試験もサイクル数は同じ。EX はロード / ストアのアドレスを mtval に入れなくなった(MR が `mr_vaddr` を出す。M232 は成り立たなくなり外した)。変異 M369 / M370、M365 の付け替え(SIM_CORE) |
 | 76 | Zicboz(`cbo.zero`) | **rs1 を含む 64 バイトのブロック全体へのストアで、D$ がメモリを読まずに行う(コマンド `ZERO`、`CPU_CACHE_SPEC_J.md` 5.3)**。MISC-MEM の funct3 2、操作の欄 4、rd 0 からデコードする(それ以外の値、Zicbom の cbo.clean / flush / inval は不正命令)。rs1 にオフセットなしの 1 バイトのストアとして扱う: DTLB はストアとして検査し(W と D、ストアのページフォールト)、PMP は rs1 の 1 バイトの書き込みとして見る(ブロックの中の 64 バイトより小さい領域は見えない。OpenSBI と Linux の領域は 4 KB 以上)、トリガは rs1 のストア、アドレスはどれでもよい(不整列にならない)。`MEM_BASE` より下(周辺)は MR でストアのアクセスフォールト。M より下では `menvcfg.CBZE`(ビット 7)が許すときだけ、U ではさらに `senvcfg.CBZE` も要る。そうでなければ ID で不正命令。そのためにキャッシュの口のコマンドを 4 ビットから 5 ビットに広げた。OpenSBI はデバイスツリーに `zicboz` があると `menvcfg.CBZE` を立て、Linux はそれでページをゼロにする(`clear_page`、`riscv,cboz-block-size = <64>` が要る): fork、exec、無名ページのフォールトのたびに、ページはまず 1 ラインずつメモリから読まれ、それから上書きされていた。`t34_cbozero`(SIM_CORE / SIM_SYS)、`t14_mmu` 60〜65、`t29_sstc` 6 と 8、SIM_CACHE の 21 章。変異 M371〜M376(SIM_CORE)、M57〜M60(SIM_CACHE) |
+| 77 | Zbs と Zbc | **Zbs は EX の ALU に、Zbc は MDU に**。Zbs(bset / bclr / binv / bext と即値形)は、rs1 の、rs2 か即値(6 ビット)が名指す 1 ビットを立てる・消す・反転する・取り出す。その 4 つのために `alu_op` を 6 ビットにし、bext は ALU にある右シフトのビット 0。Zba / Zbb と合わせて B がそろう。Zbc(clmul / clmulh / clmulr)は MDU の 64 × 64 の繰り上がり無しの乗算で、1 サイクルに rs2 の 16 ビットずつ 128 ビットの累積に入れる(4 サイクル、5 サイクル目に答え。`mdu_op` のビット 3 が印)。1 サイクルでやると EX に 64 段の XOR の木になる。デバイスツリーに Zbc があると Linux は CRC をそれで計算する(`lib/crc/riscv`): ext4 がメタデータの検査に使う `crc32c` は `ls -lR` の 5 % だった(`LitexSystem/docs/BENCH_J.md` 24 章)。カーネルに Zbs の設定は無いので、Zbs は ISA をそろえるだけ。`t28_bitmanip`(Zbs と Zbc を Python のモデルと突き合わせる)、`tb_MDU`(clmul を定義と突き合わせる、5 サイクル)、riscv-tests の `rv64uzbs` / `rv64uzbc`。変異 M377〜M383 |
+| 78 | MR が待つ物理アドレスを毎サイクル取る(T7) | **MR が DTLB を待つ間(`mr_tlb_wait`)は、毎サイクル `d_tr_paddr` とフォールトを取り、DTLB が答えたら待ちをやめる**。答えたサイクルだけ取る形をやめた。答えまではフォールトは無く、アドレスは使わない。DTLB の比較が `mr_paddr` の有効化から外れる(`LitexSystem/docs/TIMING_J.md` 43 章の最悪の経路)。サイクルは変わらない。変異 M384 |

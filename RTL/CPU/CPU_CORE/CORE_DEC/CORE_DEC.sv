@@ -26,7 +26,7 @@ module CORE_DEC
 
         // ALU
         output logic [63:0] imm,
-        output logic [4:0]  alu_op,
+        output logic [5:0]  alu_op,
         output logic        a_uw,         // Zba : rs1's low half, zero extended
         output logic [1:0]  a_shift,      // Zba : rs1 shifted left (sh1add ..)
         output logic [1:0]  a_sel,        // A_RS1 / A_PC / A_ZERO
@@ -41,7 +41,7 @@ module CORE_DEC
 
         // multiply and divide (M)
         output logic        is_mdu,
-        output logic [2:0]  mdu_op,       // funct3 of the instruction
+        output logic [3:0]  mdu_op,       // funct3 of the instruction; bit 3: Zbc
 
         // memory
         output logic        is_load,      // the result comes from the cache
@@ -92,37 +92,42 @@ module CORE_DEC
     localparam logic [1:0] CSR_RC = 2'd3;
 
     // ALU operations
-    localparam logic [4:0] ALU_ADD  = 5'd0;
-    localparam logic [4:0] ALU_SUB  = 5'd1;
-    localparam logic [4:0] ALU_SLL  = 5'd2;
-    localparam logic [4:0] ALU_SLT  = 5'd3;
-    localparam logic [4:0] ALU_SLTU = 5'd4;
-    localparam logic [4:0] ALU_XOR  = 5'd5;
-    localparam logic [4:0] ALU_SRL  = 5'd6;
-    localparam logic [4:0] ALU_SRA  = 5'd7;
-    localparam logic [4:0] ALU_OR   = 5'd8;
-    localparam logic [4:0] ALU_AND  = 5'd9;
+    localparam logic [5:0] ALU_ADD  = 6'd0;
+    localparam logic [5:0] ALU_SUB  = 6'd1;
+    localparam logic [5:0] ALU_SLL  = 6'd2;
+    localparam logic [5:0] ALU_SLT  = 6'd3;
+    localparam logic [5:0] ALU_SLTU = 6'd4;
+    localparam logic [5:0] ALU_XOR  = 6'd5;
+    localparam logic [5:0] ALU_SRL  = 6'd6;
+    localparam logic [5:0] ALU_SRA  = 6'd7;
+    localparam logic [5:0] ALU_OR   = 6'd8;
+    localparam logic [5:0] ALU_AND  = 6'd9;
     // Zbb (CORE_EXU)
-    localparam logic [4:0] ALU_ANDN = 5'd10;
-    localparam logic [4:0] ALU_ORN  = 5'd11;
-    localparam logic [4:0] ALU_XNOR = 5'd12;
-    localparam logic [4:0] ALU_MIN  = 5'd13;
-    localparam logic [4:0] ALU_MINU = 5'd14;
-    localparam logic [4:0] ALU_MAX  = 5'd15;
-    localparam logic [4:0] ALU_MAXU = 5'd16;
-    localparam logic [4:0] ALU_ROL  = 5'd17;
-    localparam logic [4:0] ALU_ROR  = 5'd18;
-    localparam logic [4:0] ALU_CLZ  = 5'd19;
-    localparam logic [4:0] ALU_CTZ  = 5'd20;
-    localparam logic [4:0] ALU_CPOP = 5'd21;
-    localparam logic [4:0] ALU_SEXTB= 5'd22;
-    localparam logic [4:0] ALU_SEXTH= 5'd23;
-    localparam logic [4:0] ALU_ZEXTH= 5'd24;
-    localparam logic [4:0] ALU_ORCB = 5'd25;
-    localparam logic [4:0] ALU_REV8 = 5'd26;
+    localparam logic [5:0] ALU_ANDN = 6'd10;
+    localparam logic [5:0] ALU_ORN  = 6'd11;
+    localparam logic [5:0] ALU_XNOR = 6'd12;
+    localparam logic [5:0] ALU_MIN  = 6'd13;
+    localparam logic [5:0] ALU_MINU = 6'd14;
+    localparam logic [5:0] ALU_MAX  = 6'd15;
+    localparam logic [5:0] ALU_MAXU = 6'd16;
+    localparam logic [5:0] ALU_ROL  = 6'd17;
+    localparam logic [5:0] ALU_ROR  = 6'd18;
+    localparam logic [5:0] ALU_CLZ  = 6'd19;
+    localparam logic [5:0] ALU_CTZ  = 6'd20;
+    localparam logic [5:0] ALU_CPOP = 6'd21;
+    localparam logic [5:0] ALU_SEXTB= 6'd22;
+    localparam logic [5:0] ALU_SEXTH= 6'd23;
+    localparam logic [5:0] ALU_ZEXTH= 6'd24;
+    localparam logic [5:0] ALU_ORCB = 6'd25;
+    localparam logic [5:0] ALU_REV8 = 6'd26;
     // Zicond
-    localparam logic [4:0] ALU_CZEQZ= 5'd27;
-    localparam logic [4:0] ALU_CZNEZ= 5'd28;
+    localparam logic [5:0] ALU_CZEQZ= 6'd27;
+    localparam logic [5:0] ALU_CZNEZ= 6'd28;
+    // Zbs
+    localparam logic [5:0] ALU_BSET = 6'd29;
+    localparam logic [5:0] ALU_BCLR = 6'd30;
+    localparam logic [5:0] ALU_BINV = 6'd31;
+    localparam logic [5:0] ALU_BEXT = 6'd32;
 
     // operand A / B select
     localparam logic [1:0] A_RS1  = 2'd0;
@@ -231,7 +236,7 @@ module CORE_DEC
         is_jalr    = 1'b0;
         br_op      = funct3;
         is_mdu     = 1'b0;
-        mdu_op     = funct3;
+        mdu_op     = {1'b0, funct3};
         is_load    = 1'b0;
         is_store   = 1'b0;
         mem_cmd    = CMD_LOAD;
@@ -358,6 +363,12 @@ module CORE_DEC
                         imm = {58'd0, insn[25:20]};
                         if (insn[31:26] == 6'b000000)
                             alu_op = ALU_SLL;                       // SLLI
+                        else if (insn[31:26] == 6'b001010)
+                            alu_op = ALU_BSET;                      // BSETI (Zbs)
+                        else if (insn[31:26] == 6'b010010)
+                            alu_op = ALU_BCLR;                      // BCLRI
+                        else if (insn[31:26] == 6'b011010)
+                            alu_op = ALU_BINV;                      // BINVI
                         else case (insn[31:20])                     // Zbb, rs1 only
                             12'h600: alu_op = ALU_CLZ;
                             12'h601: alu_op = ALU_CTZ;
@@ -373,6 +384,8 @@ module CORE_DEC
                             alu_op = insn[30] ? ALU_SRA : ALU_SRL;  // SRLI / SRAI
                         else if (insn[31:26] == 6'b011000)
                             alu_op = ALU_ROR;                       // RORI
+                        else if (insn[31:26] == 6'b010010)
+                            alu_op = ALU_BEXT;                      // BEXTI (Zbs)
                         else if (insn[31:20] == 12'h287)
                             alu_op = ALU_ORCB;                      // ORC.B
                         else if (insn[31:20] == 12'h6B8)
@@ -426,6 +439,10 @@ module CORE_DEC
                 b_sel   = B_RS2;
                 if (funct7 == 7'b0000001) begin
                     is_mdu = 1'b1;               // MUL .. REMU
+                end else if ((funct7 == 7'b0000101) && (funct3 != 3'b000) && !funct3[2]) begin
+                    // Zbc : CLMUL (001), CLMULR (010), CLMULH (011), in the MDU
+                    is_mdu = 1'b1;
+                    mdu_op = {1'b1, funct3};
                 end else
                 case ({funct7, funct3})
                     {7'b0000000, 3'b000}: alu_op = ALU_ADD;
@@ -455,6 +472,11 @@ module CORE_DEC
                     // Zicond
                     {7'b0000111, 3'b101}: alu_op = ALU_CZEQZ;
                     {7'b0000111, 3'b111}: alu_op = ALU_CZNEZ;
+                    // Zbs
+                    {7'b0010100, 3'b001}: alu_op = ALU_BSET;
+                    {7'b0100100, 3'b001}: alu_op = ALU_BCLR;
+                    {7'b0110100, 3'b001}: alu_op = ALU_BINV;
+                    {7'b0100100, 3'b101}: alu_op = ALU_BEXT;
                     default: illegal = 1'b1;
                 endcase
             end

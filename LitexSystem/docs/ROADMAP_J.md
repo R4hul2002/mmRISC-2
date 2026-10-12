@@ -111,6 +111,7 @@ WNS は +0.113 ns。大きなテーマで論理を足す前に、わかってい
 | T3 | `ma_mem` の複製 | 小 | 1 段目のファンアウト(72 本)を減らす。配置しだいで効く小さな手当て |
 | T5 | FPU / MDU の開始を CSR の判定から切り離す | 小 | **実施(2026-10-11、`CPU_CORE_SPEC_J.md` の決定 72)。** `TIMING_J.md` 38 章: `ex_csr_addr` → CSR の判定 → `ex_exc_pre` → `fpu_active` → `lsu_e_valid` → D$。実在しない経路(CSR 命令はそのどれでもない)。`mdu_active`・`fpu_active`・`d_tr_req`・`ex_late` に CSR の項を除いた `ex_exc_pre` を渡す |
 | T6 | DTLB のフォールトを `ex_exc` から外す | 小 | **実施(2026-10-12、`CPU_CORE_SPEC_J.md` の決定 75): フォールトはフリップフロップで MR へ。サイクル数は同じ。** `TIMING_J.md` 41・42 章の最悪の経路 |
+| T7 | DTLB の比較を `mr_paddr` の有効化から外す | 小 | **実施(2026-10-12、`CPU_CORE_SPEC_J.md` の決定 78)。** `TIMING_J.md` 43 章の最悪の経路 |
 | T4 | データ側の PMP の比較を 1 サイクル前へ | 小〜中 | **第一段を実施(2026-10-11、`CPU_CORE_SPEC_J.md` の決定 74): NAPOT のマスクをレジスタに持ち、その加算(4.7 ns)を経路の頭から外した。範囲比較そのものはまだ MR にある。** `TIMING_J.md` 35 章の 2 つ目の族(最悪 300 本中 276 本): `pmpaddr` → PMP の比較(CARRY4 14 段)→ 先出しした要求の取り消し → D$ の ROB が 1 サイクル。範囲の比較をレジスタに置く(または EX で DTLB の答えに対して比較する)と、MR は優先順位で選ぶだけになる |
 
 ### E. メモリ階層の残り
@@ -126,9 +127,9 @@ WNS は +0.113 ns。大きなテーマで論理を足す前に、わかってい
 
 | # | テーマ | 規模 | 中身 |
 |---|---|---|---|
-| F1 | Zbs(1 ビット操作) | 小 | `bset` / `bclr` / `binv` / `bext`。Zba / Zbb と合わせて B 拡張がそろう。ALU に足すだけ |
+| F1 | Zbs(1 ビット操作) | 小 | **実施(2026-10-12、`CPU_CORE_SPEC_J.md` の決定 77)。** `bset` / `bclr` / `binv` / `bext`。Zba / Zbb と合わせて B 拡張がそろう。ALU に足すだけ |
 | F2 | Zicboz(`cbo.zero`) | 中 | **実施(2026-10-12、`CPU_CORE_SPEC_J.md` の決定 76。`BENCH_J.md` 23 章: 実機で `forkexec` −1.8 %、D$ の読み込み −9 %、ストアの待ちは半分)。** カーネルはもう `CONFIG_RISCV_ISA_ZICBOZ=y`。ページのゼロ埋めで、メモリから行を読まずに D$ の行をゼロで確保する。fork・exec・ページフォルトのたびの読み出しが減る。D$ に新しい命令を足す。M1 と相性がよい |
-| F3 | Zbc(キャリーなし乗算) | 小〜中 | カーネルは `CONFIG_RISCV_ISA_ZBC=y`。CRC32(ext4 のメタデータ)が使う。MDU に多サイクルで足す |
+| F3 | Zbc(キャリーなし乗算) | 小〜中 | **実施(2026-10-12、決定 77。MDU で 4 サイクル。`crc32c` は `ls -lR` の 5 %、`BENCH_J.md` 24 章)。実機はこのあと。** カーネルは `CONFIG_RISCV_ISA_ZBC=y`。CRC32(ext4 のメタデータ)が使う。MDU に多サイクルで足す |
 | (M2) | Zicbop | | M にまとめた |
 
 ### G・D. デバッグと計測の仕上げ

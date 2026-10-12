@@ -117,6 +117,7 @@ WNS is +0.113 ns. Before adding logic with a large theme, deal with the paths th
 | T3 | Duplicate `ma_mem` | Small | Reduce the fanout of the first level (72). A small measure whose effect depends on placement |
 | T5 | The FPU / MDU start without the CSR check | Small | **Done (2026-10-11, decision 72 of `CPU_CORE_SPEC.md`).** Section 38 of `TIMING.md`: `ex_csr_addr` → CSR check → `ex_exc_pre` → `fpu_active` → `lsu_e_valid` → D$. Not a real path (a CSR instruction is none of those); give `mdu_active`, `fpu_active`, `d_tr_req` and `ex_late` an `ex_exc_pre` without the CSR term |
 | T6 | The DTLB's fault off `ex_exc` | Small | **Done (2026-10-12, decision 75 of `CPU_CORE_SPEC.md`): the fault goes to MR in a flip-flop; the same cycle counts.** The worst path of sections 41 and 42 of `TIMING.md` |
+| T7 | The DTLB's compare off the enable of `mr_paddr` | Small | **Done (2026-10-12, decision 78 of `CPU_CORE_SPEC.md`).** The worst path of section 43 of `TIMING.md` |
 | T4 | Data-side PMP compare a cycle earlier | Small to medium | **First step done (2026-10-11, decision 74 of `CPU_CORE_SPEC.md`): the NAPOT mask is kept in a register, which takes its add (4.7 ns) off the head of the path. The range compares themselves are still in MR.** The second family of section 35 of `TIMING.md` (276 of the worst 300): `pmpaddr` → PMP compare (14 levels of CARRY4) → cancel of the early request → the D$'s ROB, in one cycle. Register the range comparisons (or compare in EX against the DTLB's answer) so that MR only selects by priority |
 
 ### E. What remains of the memory hierarchy
@@ -132,9 +133,9 @@ WNS is +0.113 ns. Before adding logic with a large theme, deal with the paths th
 
 | # | Theme | Size | Contents |
 |---|---|---|---|
-| F1 | Zbs (single-bit operations) | Small | `bset` / `bclr` / `binv` / `bext`. With Zba / Zbb it completes the B extension. Only additions to the ALU |
+| F1 | Zbs (single-bit operations) | Small | **Done (2026-10-12, decision 77 of `CPU_CORE_SPEC.md`).** `bset` / `bclr` / `binv` / `bext`. With Zba / Zbb it completes the B extension. Only additions to the ALU |
 | F2 | Zicboz (`cbo.zero`) | Medium | **Done (2026-10-12, decision 76 of `CPU_CORE_SPEC.md`; `BENCH.md` 23: on the board `forkexec` −1.8 %, its D$ fills −9 %, its store waits halved).** The kernel already has `CONFIG_RISCV_ISA_ZICBOZ=y`. Zeroing pages allocates the D$ line as zeros without reading it from memory, cutting the reads at every fork, exec and page fault. Adds a new instruction to the D$. Goes well with M1 |
-| F3 | Zbc (carry-less multiply) | Small to medium | The kernel has `CONFIG_RISCV_ISA_ZBC=y`. Used by CRC32 (ext4 metadata). Add to the MDU as a multi-cycle operation |
+| F3 | Zbc (carry-less multiply) | Small to medium | **Done (2026-10-12, decision 77; in the MDU, four cycles; `crc32c` is 5 % of `ls -lR`, `BENCH.md` 24). Board to follow.** The kernel has `CONFIG_RISCV_ISA_ZBC=y`. Used by CRC32 (ext4 metadata). Add to the MDU as a multi-cycle operation |
 | (M2) | Zicbop | | Put under M |
 
 ### G / D. Finishing debug and measurement
