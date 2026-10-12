@@ -157,6 +157,10 @@ make tftp
 cd /tmp && tftp -g -r workload.sh 192.168.0.12 && sh workload.sh 192.168.0.12
 ```
 
+With `profile` as a second argument (`sh workload.sh 192.168.0.12 profile`, about 4 minutes) it counts
+nothing and samples each load once with `perf record` instead: its first 15 functions, then the share of
+the CRC and checksum functions in each load (perf with libelf, ROADMAP.md D2).
+
 Columns of the final table: `Mcyc` (millions of cycles), `CPI`, I$ / D$ misses (line fills), ITLB /
 DTLB misses (page table walks) and exceptions per 1000 instructions, the shares of the cycles spent
 waiting for the D$ / with the front end empty / with the back end blocked / on load-use, the

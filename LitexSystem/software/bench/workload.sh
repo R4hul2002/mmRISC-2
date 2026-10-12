@@ -3,6 +3,7 @@
 # workload.sh : Linux workloads beyond CoreMark, counted by the PMU
 #
 #   tftp -g -r workload.sh 192.168.0.12 && sh workload.sh 192.168.0.12
+#   ... && sh workload.sh 192.168.0.12 profile     (by function instead)
 #
 # CoreMark fits in the caches (BENCH.md 13). This runs ordinary work that
 # does not, each one five times under perf stat. Only applets the BusyBox of
@@ -38,8 +39,13 @@
 # instructions of its own run. The log is /tmp/workload.log, the raw counts
 # /tmp/wl/*.csv.
 #
+# With "profile" as the second argument it counts nothing but samples each
+# load once with perf record (r1 every 100000 cycles) and lists its first
+# functions, then the share of the CRC and checksum functions in each load
+# (whether Zbc, ROADMAP.md F3, is worth it). Needs perf with libelf (D2).
+#
 # Needs the PMU (bitstream, fw_jump.bin, Image with perf; perf.sh works).
-# About 14 minutes.
+# About 14 minutes (profile: about 4).
 #---------------------------------------------------------------------------
 SERVER=${1:?usage: sh workload.sh <tftp server>}
 DIR=${WL_DIR:-/tmp/wl}
@@ -87,6 +93,26 @@ EVSETS="r7,r8,r9,ra rb,rc,r11,rd r5,r6,r3,r4 re,rf,r10,r1 r12,r13 r14,r15,r16,r1
 WORKLOADS="gunzip md5sum awk ls ext4read sdread forkexec tftp"
 
 cold() { case $1 in ext4read|sdread) drop ;; esac; }
+
+if [ "$2" = profile ]; then
+    for w in $WORKLOADS; do
+        c=$(cmd $w)
+        echo "=== $w by function: $c" | tee -a "$LOG"
+        cold $w
+        ./perf record -e r1 -c 100000 -o "$w.data" sh -c "$c" > /dev/null 2>> "$LOG"
+        ./perf report -i "$w.data" --stdio --sort dso,sym 2>/dev/null |
+            grep -v "^#\|^$" | head -15 | tee -a "$LOG"
+    done
+    echo "" | tee -a "$LOG"
+    echo "=== CRC and checksum functions, % of each load's samples" | tee -a "$LOG"
+    for w in $WORKLOADS; do
+        ./perf report -i "$w.data" --stdio --sort sym 2>/dev/null | grep -v "^#\|^$" |
+            awk -v w="$w" '/crc|csum|chksum|checksum/ { t += $1; l = l " " $NF "(" $1 ")" }
+                           END { printf "%-9s %6.2f %%  %s\n", w, t, l }' | tee -a "$LOG"
+    done
+    rm -f "$SDFILE"
+    exit 0
+fi
 
 for w in $WORKLOADS; do
     c=$(cmd $w)
