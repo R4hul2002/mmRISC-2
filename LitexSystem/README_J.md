@@ -10,19 +10,19 @@ Linux を起動するための一式。
 ソフトウェア一式と SD カードの作り方をそのまま使い、**CPU だけ差し替える**のが
 ここの仕事。
 
-## 現状(2026-10-05)
+## 現状(2026-10-12)
 
 実機(50 MHz)で LiteX BIOS → OpenSBI → Linux 7.2 が SD カードの ext4 から BusyBox の
 シェルまで起動し、Ethernet(DHCP、ping、BIOS の TFTP ネットブート)も動く。120 分の
-負荷試験(メモリ・Ethernet・SD カードの同時照合)は PASS。
+負荷試験(メモリ・Ethernet・SD カードの同時照合)は PASS(最後は 2026-10-09 の版)。
 
 | | |
 |---|---|
-| 性能 | **2.747 CoreMark/MHz**(Zba/Zbb で作ったもの。rv64gc なら 2.462)、**1.482 DMIPS/MHz** |
-| ISA(Linux から見える) | `rv64imafdc_zicntr_zicond_zicsr_zifencei_zihintntl_zihintpause_zihpm_zba_zbb_smcntrpmf_sscofpmf_sstc`、デバッグのトリガ 4 本(Sdtrig) |
-| 性能カウンタ | `hpmcounter3`〜`6`、イベント 24 種(20〜24 はメモリの待ち。`software/bench/workload.sh`)。Linux の `perf stat` / `perf record` で使える(`software/bench/perf.sh`) |
-| タイミング | 50 MHz で WNS +0.452 ns(MET) |
-| 資源 | LUT 45,598 / 63,400(71.9 %)、ブロック RAM 40.5 / 135 タイル |
+| 性能 | **2.785 CoreMark/MHz**(Zba/Zbb で作ったもの。rv64gc なら 2.499)、**1.501 DMIPS/MHz**(`-O2`)。いちばん速くなるオプションで 3.025 / 1.542(`docs/BENCH.md` 17 章)。Linux の負荷の関数ごとの内訳: `docs/BENCH.md` 24・25 章 |
+| ISA(デバイスツリーの `riscv,isa`) | `rv64imafdc_zicboz_zicntr_zicond_zicsr_zifencei_zihintntl_zihintpause_zihpm_zba_zbb_zbc_zbs_smcntrpmf_sscofpmf_sstc`、デバッグのトリガ 4 本(Sdtrig) |
+| 性能カウンタ | `hpmcounter3`〜`6`、イベント 26 種(20〜24 はメモリの待ち、25・26 は I$ の先読み。`software/bench/workload.sh`)。Linux の `perf stat` / `perf record`、関数ごとの `perf report` で使える(`software/bench/perf.sh`) |
+| タイミング | 50 MHz で WNS +0.664 ns(MET、`docs/TIMING.md` 44 章) |
+| 資源 | LUT 46,928 / 63,400(74.0 %)、スライス 86.2 %、ブロック RAM 108.5 / 135 タイル(CPU の L2 を含む) |
 
 途中で見つかった問題と修正は `docs/BRINGUP.md`、タイミングは `docs/TIMING.md`、性能は
 `docs/BENCH.md`、次のテーマは `docs/ROADMAP.md`。JTAG / cJTAG のデバッグポートを PMOD JA に
@@ -65,7 +65,8 @@ LitexSystem/
 │   ├── build_soc.sh     SoC 生成(Linux 側。Vivado は走らせない)
 │   ├── build_digilent_arty.bat   Vivado 実行(Windows 側)
 │   ├── build_opensbi.sh デバイスツリー入りの fw_jump.bin(opensbi_patches を当てる)
-│   ├── build_perf.sh    perf(静的リンク)を作り、bench/out に置く
+│   ├── build_perf_libs.sh  perf の関数名のための zlib と libelf(静的)を ~/mmlitex_build/perf_libs に作る
+│   ├── build_perf.sh    perf(静的リンク、libelf があれば使う)を作り、bench/out に置く
 │   ├── sd_rootfs.sh     SD カードのルートファイルシステムを書く
 │   ├── timing_paths.tcl / .bat   最悪 300 本の経路のレポート(Windows 側)
 │   └── jtag_check.tcl   実機の JTAG 確認(OpenOCD)
@@ -75,7 +76,7 @@ LitexSystem/
 │   │                    boot.json)、カーネルの設定、OpenSBI のパッチと手順
 │   ├── rootfs/          ルートファイルシステムに足すもの(inittab、udhcpc のスクリプト、
 │                        負荷試験 stress.sh)
-│   └── bench/           ベンチマーク(CoreMark、Dhrystone、micro)と perf.sh。TFTP でボードへ
+│   └── bench/           ベンチマーク(CoreMark、Dhrystone、micro)、perf.sh と workload.sh。TFTP でボードへ
 ├── docs/
 │   ├── BRINGUP.md       立ち上げ記録と手順
 │   ├── TIMING.md        タイミング収束の記録
@@ -103,6 +104,7 @@ LiteX の作業場所と OpenSBI のソース、そして `~/mmlitex_build/` の
 | `~/mmlitex_build/initramfs/` | `scripts/sd_rootfs.sh`(SD カードの第 2 パーティション)、`SIM/SIM_BIOS` | SD カードを作るなら要る |
 | `~/mmlitex_build/initrd_bb` | `SIM/SIM_BIOS`(`make linux` とそれ以降) | Linux のシミュレーションだけ |
 | `LitexRocket/software/linux/` | `scripts/build_perf.sh`、`Image` の作り直し | `perf` か新しいカーネルのときだけ(`Image` 自体は `software/boot/` にある) |
+| `~/mmlitex_build/perf_libs/` | `scripts/build_perf.sh`(`scripts/build_perf_libs.sh` が作る) | `perf report` を関数名で出すときだけ |
 | `LitexRocket/litex_ws/build/`、`software/boot/`、`docs/` | Rocket 構成そのもの | 要らない(参考用) |
 
 ### 0. ホスト

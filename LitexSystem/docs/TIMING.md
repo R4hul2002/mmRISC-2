@@ -1734,3 +1734,27 @@ T6 (the DTLB's fault taken into a flip-flop and raised in MR, decision 75 of `CP
   although while MR waits the DTLB is given MR's address. Taking `d_tr_paddr` and the fault in every cycle MR
   waits (they are only used once it stops waiting) would take the compare off the CE (candidate T7). Nothing of
   Zicboz is near the top.
+
+## 44. Zbc, Zbs, T7: +0.664 ns (2026-10-12)
+
+Zbc (`clmul` / `clmulh` / `clmulr` in the MDU, 16 bits a cycle, decision 77 of `CPU_CORE_SPEC.md`), Zbs (in the
+ALU, decision 77) and T7 (while MR waits for the DTLB it takes `d_tr_paddr` and the fault in every cycle,
+decision 78).
+
+| | Section 43 | This version |
+|---|---|---|
+| WNS | +0.393 ns | **+0.664 ns** |
+| WHS | +0.008 ns | +0.053 ns |
+| LUT | 45,782 (72.2 %) | 46,928 (74.0 %) |
+| FF | 26,183 (20.7 %) | 26,516 (20.9 %) |
+| Slices | 85.7 % (13,583) | 86.2 % (13,658) |
+
+- **The path of T7 is gone**: nothing ends in the CE of `mr_paddr` any more. Zbc and Zbs add LUT +1,146 and FF
+  +333 (most of the FFs are the 128-bit accumulator and operand of the MDU); nothing of them is among the worst
+  paths.
+- All ten worst paths start at the D$'s answer (`ma_signed` → `d_resp_data` → forwarding from MA), the load
+  feeding the next instruction in EX: `mr_paddr` through EX's address add and the DTLB's compare and select
+  (19 levels, 73 % routing, +0.664 ns; the data now, not the enable), `mr_result` through the ALU (+0.692 ns) and
+  the IFU's prefetch queue through the address, the misaligned check and the redirect (+0.759 ns). This is the
+  design's own load-to-use path: shortening it means a cycle more of load use, not worth it while the core has
+  0.6 ns.

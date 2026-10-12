@@ -9,19 +9,19 @@ boot Linux on it.
 already booting Linux (not under git; how to build it: "Preparation" below). The job here is to take the software and the way of building the
 SD card established there as they are, and **replace only the CPU**.
 
-## Status (2026-10-05)
+## Status (2026-10-12)
 
 On the board (50 MHz), LiteX BIOS → OpenSBI → Linux 7.2 boots from the ext4 of the SD card to the
 BusyBox shell, and Ethernet works (DHCP, ping, TFTP netboot from the BIOS). The 120-minute stress test
-(memory, Ethernet and SD card checked at the same time) passes.
+(memory, Ethernet and SD card checked at the same time) passes (last run on the version of 2026-10-09).
 
 | | |
 |---|---|
-| Performance | **2.747 CoreMark/MHz** (built with Zba/Zbb; 2.462 for rv64gc), **1.482 DMIPS/MHz** |
-| ISA (as Linux sees it) | `rv64imafdc_zicntr_zicond_zicsr_zifencei_zihintntl_zihintpause_zihpm_zba_zbb_smcntrpmf_sscofpmf_sstc`, 4 debug triggers (Sdtrig) |
-| Performance counters | `hpmcounter3` to `6`, 24 events (20 to 24 for the memory waits, `software/bench/workload.sh`). Usable with Linux's `perf stat` / `perf record` (`software/bench/perf.sh`) |
-| Timing | WNS +0.452 ns at 50 MHz (MET) |
-| Resources | LUT 45,598 / 63,400 (71.9 %), block RAM 40.5 / 135 tiles |
+| Performance | **2.785 CoreMark/MHz** (built with Zba/Zbb; 2.499 for rv64gc), **1.501 DMIPS/MHz** (`-O2`); 3.025 / 1.542 with the options that make it fastest (`docs/BENCH.md` 17). Linux loads by function: `docs/BENCH.md` 24 and 25 |
+| ISA (`riscv,isa` of the device tree) | `rv64imafdc_zicboz_zicntr_zicond_zicsr_zifencei_zihintntl_zihintpause_zihpm_zba_zbb_zbc_zbs_smcntrpmf_sscofpmf_sstc`, 4 debug triggers (Sdtrig) |
+| Performance counters | `hpmcounter3` to `6`, 26 events (20 to 24 for the memory waits, 25 and 26 for the I$'s prefetch; `software/bench/workload.sh`). Usable with Linux's `perf stat` / `perf record`, `perf report` by function (`software/bench/perf.sh`) |
+| Timing | WNS +0.664 ns at 50 MHz (MET, `docs/TIMING.md` 44) |
+| Resources | LUT 46,928 / 63,400 (74.0 %), slices 86.2 %, block RAM 108.5 / 135 tiles (the CPU's L2 included) |
 
 The problems found on the way and their fixes are in `docs/BRINGUP.md`, timing in `docs/TIMING.md`,
 performance in `docs/BENCH.md`, the next themes in `docs/ROADMAP.md`. The JTAG / cJTAG debug port is
@@ -64,7 +64,8 @@ LitexSystem/
 │   ├── build_soc.sh     generates the SoC (Linux side; does not run Vivado)
 │   ├── build_digilent_arty.bat   runs Vivado (Windows side)
 │   ├── build_opensbi.sh fw_jump.bin with the device tree (applies opensbi_patches)
-│   ├── build_perf.sh    builds perf (static) and puts it in bench/out
+│   ├── build_perf_libs.sh  zlib and libelf (static) for perf's function names, in ~/mmlitex_build/perf_libs
+│   ├── build_perf.sh    builds perf (static, with libelf when it is there) and puts it in bench/out
 │   ├── sd_rootfs.sh     writes the root file system of the SD card
 │   ├── timing_paths.tcl / .bat   report of the 300 worst paths (Windows side)
 │   └── jtag_check.tcl   JTAG check on the board (OpenOCD)
@@ -74,7 +75,7 @@ LitexSystem/
 │   │                    boot.json), the kernel configuration, the OpenSBI patches and procedure
 │   ├── rootfs/          what is added to the root file system (inittab, udhcpc script,
 │                        stress test stress.sh)
-│   └── bench/           benchmarks (CoreMark, Dhrystone, micro) and perf.sh; to the board by TFTP
+│   └── bench/           benchmarks (CoreMark, Dhrystone, micro), perf.sh and workload.sh; to the board by TFTP
 ├── docs/
 │   ├── BRINGUP.md       bring-up record and procedure
 │   ├── TIMING.md        record of timing closure
@@ -103,6 +104,7 @@ versions that are in use now. The commands are run at the top of the repository 
 | `~/mmlitex_build/initramfs/` | `scripts/sd_rootfs.sh` (2nd partition of the SD card), `SIM/SIM_BIOS` | Yes, for the SD card |
 | `~/mmlitex_build/initrd_bb` | `SIM/SIM_BIOS` (`make linux` and the targets after it) | Only for the Linux simulation |
 | `LitexRocket/software/linux/` | `scripts/build_perf.sh`, rebuilding `Image` | Only for `perf` or a new kernel (`Image` itself is in `software/boot/`) |
+| `~/mmlitex_build/perf_libs/` | `scripts/build_perf.sh` (made by `scripts/build_perf_libs.sh`) | Only for `perf report` by function name |
 | `LitexRocket/litex_ws/build/`, `software/boot/`, `docs/` | The Rocket configuration itself | No (reference only) |
 
 ### 0. Host

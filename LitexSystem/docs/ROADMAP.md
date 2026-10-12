@@ -1,10 +1,12 @@
-# Next design themes (as of 2026-10-09)
+# Next design themes (as of 2026-10-12)
 
 [日本語](ROADMAP_J.md)
 
-Where things stand after the themes of 2026-10-03 to 10-09 (A, B, C2, D1, E1, G1, H). The history of
-each theme is in the table of section 2 and in the sections of the documents it points to (earlier
-versions of this document are in the git history).
+Where things stand after the themes of 2026-10-10 to 10-12 (memory waits M, timing T, ISA F, measurement D).
+This version is reorganized: the themes done are one line each in section 2 (their history is in the
+documents they point to; earlier versions of this document are in the git history), and section 3 holds only
+what is left, ranked again by what the board's loads spend their cycles on, function by function (sections 24
+and 25 of `BENCH.md`).
 
 ## 1. Where things are
 
@@ -12,27 +14,25 @@ On the board (Arty A7-100T, 50 MHz, Linux 7.2):
 
 | | Value | Document |
 |---|---|---|
-| CoreMark | **2.498 /MHz** (rv64gc), **2.785 /MHz** (built with Zba and Zbb) | Sections 15 and 16 of `BENCH.md` |
-| Dhrystone | 1.488 / 1.496 DMIPS/MHz | Same |
-| Floating point | 8-tap FIR **1.53 cycles per multiply-add** (65.6 MFLOPS), matrix multiply 64×64 **2.42** (41.2 MFLOPS, assembler + cache blocking) | `RTL/CPU/CPU_FPU/README.md` |
-| Resources | LUT 44,833 (70.7 %), FF 24,712 (19.5 %), **slices 86.2 % (about 2,190 left)**, block RAM 108.5 / 135 (26.5 left), DSP 32 / 240 | Section 34 of `TIMING.md` |
-| Timing | WNS +0.113 ns (50 MHz). The worst path is the debugger's CSR number → CSR checks → EX exception → stall | Same |
+| CoreMark | **2.499 /MHz** (rv64gc), **2.785 /MHz** (Zba and Zbb), both `-O2`; **3.025 /MHz** with the options that make it fastest | Sections 16 and 17 of `BENCH.md` |
+| Dhrystone | 1.490 / 1.501 DMIPS/MHz (`-O2`), 1.536 / 1.542 (fastest options within the rules) | Section 17 of `BENCH.md` |
+| Floating point | 8-tap FIR **1.53 cycles per multiply-add** (65.6 MFLOPS), matrix multiply 64×64 **2.42** (41.2 MFLOPS, assembler and cache blocking) | `RTL/CPU/CPU_FPU/README.md` |
+| ISA | RV64GC, Zba, Zbb, **Zbs**, **Zbc**, Zicond, **Zicboz**, Zihintpause, Zihintntl, Sstc, Sdtrig, Zihpm / Sscofpmf / Smcntrpmf, Sv39, PMP 8 entries | `README.md` |
+| Resources | LUT 46,928 (74.0 %), FF 26,516 (20.9 %), **slices 86.2 % (about 2,190 left)**, block RAM 108.5 / 135 (26.5 left), DSP 32 / 240 | Section 44 of `TIMING.md` |
+| Timing | **WNS +0.664 ns** (50 MHz). The ten worst paths are the load's value forwarded to the next instruction in EX (into the DTLB, the ALU and the IFU) | Same |
 
-**Where the time goes**:
+**Where the time goes** (`workload.sh`, `workload.sh profile`, sections 24 and 25 of `BENCH.md`):
 
-- **CoreMark** (fits in the caches): CPI 1.118. The losses are front end empty 4.0 %, MDU / FPU wait
-  2.6 %, load-use 2.0 %, D$ wait 0.25 % and so on, all a few % (sections 13 and 15 of `BENCH.md`).
-  What remains in the pipeline is hardly worth the effort and the risk.
-- **Real Linux loads** (`workload.sh`, with the L2): of the cycles, **D$ wait is 7 to 9 % in user-mode
-  loads and 16 to 39 % in kernel-heavy loads**, front end empty (I$ misses) 2 to 30 % (section 15 of
-  `BENCH.md`). User-mode loads also show many DTLB misses (8 to 16 per 1000 instructions).
-- **Floating point**: what remains of the matrix multiply (the gap between 2.42 and the kernel's 1.7)
-  is D$ misses.
+| Kind | Loads | CPI | What the cycles go to |
+|---|---|---|---|
+| Fits in the caches | CoreMark | 1.12 | Nothing large: front end empty 4.8 %, back end 5.6 %, load use 2.0 % |
+| User mode | `gunzip`, `md5sum`, `awk` | 1.13 to 1.60 | **DTLB walks**: 7.9 (`gunzip`) and 14.0 (`awk`) per 1000 instructions, about 15 cycles each, so **about 10 % and 13 % of their cycles** (section 14 of `BENCH.md`). `md5sum`: the copy to user space 6.6 %, D$ wait 8 % |
+| Kernel heavy | `ls`, `ext4read`, `sdread`, `forkexec`, `tftp` | 2.0 to 2.7 | Front end empty 21 to 31 % (I$ misses 19 to 61 per 1000 instructions, mostly L2 hits) and D$ wait 13 to 34 %. By function: **the copy to user space** (21 % of `sdread`, 4 % of `tftp`), **`memcpy`** (4 % of `forkexec`), **`liteeth_start_xmit`** (11 % of `tftp`: uncached writes to LiteEth), time with interrupts off around the SD card driver (`queue_work_on` 15 to 20 % of `ext4read` / `sdread`), wrong guesses on 27 to 68 % of the branches |
 
-The core today **waits in MA for the answer when a load or store misses, and nothing moves meanwhile**
-(stall on miss). The D$ itself accepts hits to other lines during a miss (2 MSHRs, an 8-entry ROB that
-answers in order), and there is an L2, but the core does not make use of them. That is where the next
-big gain is (section 3, M).
+What was the main theme of the previous version, overlapping memory waits, is done as far as it pays: the D$
+no longer makes the core wait for store misses (M1), asks for the fill before copying a dirty victim out (M5),
+zeroes pages without reading them (F2), and the bus grants a read in the cycle it is asked (`FAST_READ`). What is
+left is in the TLB and in the writes that the copies and the drivers make.
 
 ---
 
@@ -42,129 +42,110 @@ big gain is (section 3, M).
 |---|---|---|---|
 | A1 / H1 | Long stress tests | 120 minutes three times (after A1, H1 and E1), all OK | Rounds 14, 16 and 17 of `BRINGUP.md` |
 | A2 | Timing of the SD card inputs | Already taken in the I/O block's `IDDR` (no change) | Round 13 of `BRINGUP.md` |
-| A3 | `fence` | Confirmed that doing nothing is enough for a single hart, and added tests | `CPU_CORE_SPEC.md` 5.3 |
-| B1 | Zba / Zbb | CoreMark +11.6 %, Linux's string functions switch to the Zbb versions | Decision 65 |
+| A3 | `fence` | Doing nothing is enough for a single hart; tests added | `CPU_CORE_SPEC.md` 5.3 |
+| B1 | Zba / Zbb | CoreMark +11.6 %, Linux's string functions switch to the Zbb versions | Decision 65 of `CPU_CORE_SPEC.md` |
 | B2 | Sstc | CoreMark +1.5 % (no more going through OpenSBI at every timer) | Decision 66 |
-| B3 | Zicond / Zihintpause / Zihintntl | 2 operations in the ALU; the hints only put in the device tree | Decision 68 |
+| B3 | Zicond / Zihintpause / Zihintntl | 2 operations in the ALU; the hints only in the device tree | Decision 68 |
 | B4 | Sdtrig (4 triggers) | Hardware breakpoints and watchpoints in gdb | Decision 67, section 5 of `JTAG.md` |
 | B5 | PMU (Zihpm, Sscofpmf, Smcntrpmf) | `perf stat` / `perf record` on the board | Decision 69, section 13 of `BENCH.md` |
-| C2 | Pipelining the FPU | Add / subtract, multiply, multiply-add and conversions at one a cycle. FIR 1.53, matrix multiply 2.42 cycles per multiply-add (17.6 in C with the earlier version). Resources even went down | `RTL/CPU/CPU_FPU/README.md`, `CPU_CORE_SPEC.md` 10.11, section 16 of `BENCH.md` |
-| D1 | Measuring real Linux loads with the PMU | `workload.sh` (8 loads) | Section 14 of `BENCH.md` |
-| E1 | L2 cache (256 KB) | 1.2 to 1.7 times on kernel-heavy loads | `CPU_L2_SPEC.md`, section 15 of `BENCH.md` |
+| C2 | Pipelining the FPU | One add, multiply, multiply-add or conversion a cycle. FIR 1.53, matrix multiply 2.42 cycles per multiply-add | `RTL/CPU/CPU_FPU/README.md`, section 16 of `BENCH.md` |
+| D1 | Linux loads measured with the PMU | `workload.sh` (8 loads) | Section 14 of `BENCH.md` |
+| D2 | `perf` with function names (2026-10-12) | `perf` with libelf (`scripts/build_perf_libs.sh`); `perf.sh` and `workload.sh profile` report by function, the kernel's names included | Sections 23 and 24 of `BENCH.md` |
+| E1 | L2 cache (256 KB) | Kernel-heavy loads 1.2 to 1.7 times faster | `CPU_L2_SPEC.md`, section 15 of `BENCH.md` |
+| F1 | Zbs (2026-10-12) | `bset` / `bclr` / `binv` / `bext` in the ALU; with Zba / Zbb the B extension | Decision 77 |
+| F2 | Zicboz (2026-10-12) | `cbo.zero` makes a line of zeros in the D$ without reading memory; `forkexec` −1.8 %, its D$ fills −9 %, its store waits halved | Decision 76, section 23 of `BENCH.md` |
+| F3 | Zbc (2026-10-12) | `clmul` / `clmulh` / `clmulr` in the MDU (16 bits a cycle, 5 cycles); the kernel's `crc32c` uses it: `ls -lR` about −3 % of its cycles | Decision 77, section 25 of `BENCH.md` |
 | G1 | Triggers with gdb on the board | `hbreak` / `watch` on a running kernel | Section 5 of `JTAG.md` |
 | H2 | How to write the SD card | Write the first partition from the Mac | `software/boot/README.md` |
+| M0 | What the memory waits are made of (2026-10-10) | Events 20 to 24, the profiler of SIM_SYS; found M5, M1 and the single-read bus | Decision 71, section 18 of `BENCH.md` |
+| M1 | Not waiting for store misses (2026-10-10) | A cacheable store is answered when the D$ takes it; store waits −9 to −38 %, `forkexec` −2.9 %, `sdread` −2.5 % | Section 20 of `BENCH.md`, `CPU_CACHE_SPEC.md` 4.3 |
+| M3 | I$ next-line prefetch (2026-10-11) | Built, but **off** (`IC_PREFETCH = 0`): on the board a demand miss waits behind the whole burst of an unused prefetch (0 to 4 % loss). Needs a demand miss that can take the bus from it | Section 21 of `BENCH.md` |
+| M5 | The fill asked for before the dirty victim is copied (2026-10-10) | A dirty miss 22.0 → 12.7 cycles; Linux loads 0.5 to 3.7 % faster | Section 19 of `BENCH.md` |
+| (bus) | The read granted in the cycle of the request (`FAST_READ`, 2026-10-12) | Measured first: a second read in the L2 would take 0.26 % of the cycles, the arbiter's registered grant 1.8 %. Kernel loads −1.7 to −3.5 % | Section 22 of `BENCH.md`, `CPU_CACHE_SPEC.md` 5.7 |
+| T1 | EX's CSR checks apart from the debugger's number (2026-10-10) | The worst path then gone | Decision 70, section 35 of `TIMING.md` |
+| T2 | A DTLB miss waits in MR, not as a stall of EX (2026-10-11) | The same cycles | Decision 73, section 40 of `TIMING.md` |
+| T4 (first step) | The NAPOT mask of the PMP kept in a register (2026-10-11) | The PMP family left the top; the core +0.977 ns | Decision 74, section 41 of `TIMING.md` |
+| T5 | The FPU / MDU start without the CSR check (2026-10-11) | | Decision 72, section 40 of `TIMING.md` |
+| T6 | The DTLB's fault raised in MR (2026-10-12) | The same cycles | Decision 75, section 43 of `TIMING.md` |
+| T7 | The DTLB's compare off the enable of `mr_paddr` (2026-10-12) | WNS +0.393 → +0.664 ns | Decision 78, section 44 of `TIMING.md` |
+| (sim) | A memory latency model in simulation (2026-10-12) | `AXI4_SLAVE_MEM` `r_lat` / `b_lat` (`+rlat=20 +blat=10` in SIM_BIOS) like the board's DDR3; with it the simulation gives the board's verdict on the prefetch | Section 22 of `BENCH.md` |
 
 ---
 
 ## 3. Next themes
 
-### M. Overlapping memory waits with computation (new, the main one)
+### E3. A second-level TLB (the largest for user-mode loads)
 
-The rule today is "**a load or store in MA stops until the D$ answers**" (`stall_ma = ma_valid & ma_mem
-& ~lsu_resp_valid`). On a miss the whole pipeline stops for 14 to 22 cycles on an L2 hit, and 60 cycles
-or more when it goes to DRAM. Stores are the same: a write-allocate miss waits until the line arrives.
-There are 4 levels of overlap, from the lightest, and they can be combined.
+The ITLB and the DTLB have 8 entries each, fully associative and compared in the cycle of the address (on
+the worst path, so they cannot simply be made larger). User-mode loads walk the page tables 0.5 to 14 times
+per 1000 instructions, about 15 cycles each through the D$ and the L2: **about 13 % of the cycles of `awk`,
+10 % of `gunzip`**, and 4 to 9 % of the kernel loads (`ls` 12 walks per 1000 instructions, `forkexec` 5).
+
+| Step | Size | Contents |
+|---|---|---|
+| E3a | Small | **Measure first**: a PMU event for the cycles the walker is busy (data and instruction side apart), so that the cost of the walks is counted instead of estimated; and in SIM_BIOS, the DTLB with 16 / 32 / 64 entries (only the parameter, the timing does not matter there) to see how many walks a larger table would take away |
+| E3b | Medium | A shared second level of 64 to 128 entries, set associative in distributed RAM (4 ways × 16 to 32 sets, about 100 bits an entry), between the two L1 TLBs and the walker: a miss of an L1 TLB asks it (1 to 2 cycles) before walking. Superpages need either a second table or a lookup per size (Linux maps the kernel with 2 MB / 1 GB pages, the L1 holds them already). `sfence.vma` invalidates both levels. About LUT +500 to +1,000; nothing on EX's path |
+
+### W. Writes (new, from the profile)
 
 | # | Theme | Size | Contents | Where it helps |
 |---|---|---|---|---|
-| M0 | **Measure what the waits are made of** | Small | **Done (2026-10-10, section 18 of `BENCH.md`, simulation and board; events 20 to 24, decision 71 of `CPU_CORE_SPEC.md`).** Count first which waits are worth removing: (1) the share of stores and of loads in MA's waits, (2) the distribution of the distance (in instructions) from a load to the instruction that uses its value, (3) the number of misses in flight per cycle. Add them to the profiler of SIM_SYS and as PMU events (2 or 3), and look with `workload.sh` and `micro` | Decides which of M1 to M4 to do |
-| M1 | **Do not wait for stores** (store buffer) | Medium | **Done in the D$ (2026-10-10, `BENCH.md` 20: store waits −9 to −38 % on the board, `forkexec` −2.9 %, `sdread` −2.5 %). The core-side part (M1b: not waiting for the answer of an accepted store) is left: 1 to 2 cycles a store.** A store to the cacheable region retires when the D$ accepts it, without waiting for the answer. The D$ always performs the stores it accepted in order, so later loads line up behind them and the order is kept. Cacheable stores get no bus errors (only the uncached region, AMO and SC do, and those keep waiting as now). Add the rule that `fence` waits for it to be empty | Store misses (`memset`, `memcpy`, copying pages at fork, writing C back in the matrix multiply). (1) of M0 tells how much |
-| M2 | **Software prefetch** (Zicbop, `prefetch.r` / `prefetch.w`) | Small to medium | A prefetch instruction only makes the D$ start handling a miss (MSHR); the core does not wait for the answer (the D$ answers as soon as it accepts it and does not block the ROB). Zicbop is a hint shaped like an ORI, so the core today runs it as an instruction that does nothing. **The running kernel is already built with `CONFIG_RISCV_ISA_ZICBOP=y`**, so putting `zicbop` in the device tree makes the kernel's `prefetch` / `prefetchw` start to work. GCC 13.2 turns `__builtin_prefetch` into `prefetch.r` with `-march=..._zicbop` (checked) | The assembler kernels (the matrix multiply reading the rows of A and C one panel ahead: 2.42 → about 2.0 expected), hand-written loops like `memcpy`, parts of the kernel |
-| M3 | **Hardware prefetch** | Medium | **I$ next-line prefetch done (2026-10-11, `BENCH.md` 21: the Linux boot −1.1 % CPI outside WFI, 48 % of the prefetches used); **on the board a loss of 0 to 4 % CPI on the kernel loads** (`BENCH.md` 21.1): a demand miss waits for the whole burst of an unused prefetch, and the DDR3 makes that long. It pays only once the bus takes a second read or lets a demand miss go first; **switched off by default** (`IC_PREFETCH = 0`) until then. The rest (streams in the L2) waits for the bus to take a second read.** The D$ or the L2 watches the pattern of accesses (next line, constant stride) and starts reading the next line by itself. No software change needed. Putting it in the L2 is safer (does not pollute the L1, far from the core's timing). Follows 1 or 2 streams with the L2's spare capacity | Streaming loads (`md5sum` with its 71 % L2 hit rate, `gunzip`, the copy of SD reads). The "kind that prefetch reduces" of section 14 of `BENCH.md` |
-| M4 | **Do not stop on a load miss** (stall on use) | Large | A load that misses leaves MA without waiting for the result, and the result is written later through **the second write port of the register file** (the port C2 made for the FPU). The destination register gets a pending bit (the same form as C2's `gpr_pend` / `fp_pend`), and only instructions that read it wait. The D$ answers in order, so a FIFO of the loads' destinations is enough | Matrix multiply (getting close to the kernel's 1.7), integer code with independent work after a load. Pointer-chasing loops use the value right away and gain nothing |
-| M5 | **Ask for the fill before copying the dirty victim out** (new, from M0) | Small | **Done (2026-10-10, `BENCH.md` 19: a dirty miss 22.0 → 12.7 cycles; on the board the Linux loads 0.5 to 3.7 % faster, as M0 predicted).** Today the fill engine of the D$ copies the 8 words of a dirty victim into a writeback buffer (`F_WB_READ` → `F_WB_PUSH`, about 11 cycles) and only then raises the read address of the new line. Raise it first and copy while the fill is outstanding: the copy reads a word a cycle through the read port, the fill writes a beat a cycle through the write port and its first beat comes at the earliest 2 cycles after the address, so the copy stays ahead (an interlock holds `rready` should it ever fall behind). Only the D$ changes | Every miss that evicts a dirty line: 27 % of MA's waits in `fploop`, 37 % in `ldloop` (`BENCH.md` 18); on the board, event 24 of `workload.sh` |
-
-**The hard parts of M4** (which M1 and M2 do not have):
-
-- **Precise exceptions**: exceptions of address translation and PMP are known in MR (before leaving
-  MA), so they stay precise. Only bus errors come later, and the cacheable region has none (DRAM and the
-  L2 return no errors). The uncached region, LR / SC, AMO and the debugger's accesses keep waiting as now.
-- **Competition for the write port**: the FPU's answers come out in fixed cycles and cannot be stopped,
-  so a load result arriving in the same cycle waits a cycle in a buffer of 1 or 2 entries (or the LVT
-  gets 3 banks).
-- **Order**: an instruction that writes the same register later (WAW), a trap while results are still
-  coming (they are past the point of being taken back, so the trap waits for them), the debugger's halt,
-  `fence`. The same kind of problems as C2, so t33 and the form of the bug injections can be reused.
-- Resources: about LUT +1,000 to 2,000 on the core side. Slices go back from 86.2 % to 89 to 92 %.
-
-**Recommended order**: M0 → M1 and M2 (both medium and independent; M2 also helps Linux) → M3 or M4
-depending on M0's numbers. M4 helps the widest range, but it is about as large as stage 2 of C2.
-
-**What M0 found** (simulation, `BENCH.md` 18): (1) the copy of dirty victims is a large and cheap part (M5);
-(2) on misses stores wait as long as loads (M1); (3) missed loads are mostly used one or two instructions
-later, so M4 hides little in code that uses the value at once (7.5 % in `ldloop`, 39 % in the matrix
-kernels, which load ahead); (4) **the bus takes one read at a time** (the arbiter of `CPU_CACHE` keeps a read
-until its last beat, the L2 takes one transaction at a time): two misses at once are rare now, but a
-prefetch (M2 / M3) would occupy the bus, and a demand miss behind it waits for the whole prefetch. Before
-M3, or if M2 shows that, the read side of the bus needs to take a second read (or let a demand miss go first).
-**Measured (2026-10-12, `BENCH.md` 22)**: a second read in the L2 could take 0.26 % of the cycles and was not
-built; the arbiter's grant in the cycle of the request (`FAST_READ`) took 2.7 % of the Linux boot instead. What
-the prefetch needs is a demand miss that can take the channel from it.
-
-**Considered only (probably not done)**: issuing an FLD and an FP operation in the same cycle (dual issue
-of memory and floating point). The FIR would go 1.53 → about 1.0 and the matrix multiply kernel 1.7 →
-about 1.1, but making fetch, decode and issue two wide is in effect a new pipeline, not worth it at
-50 MHz with the slices left.
-
-### T. Getting timing margin back (small to medium, before M4)
-
-WNS is +0.113 ns. Before adding logic with a large theme, deal with the paths that are known.
-
-| # | Theme | Size | Contents |
-|---|---|---|---|
-| T1 | Separate EX's CSR checks from the debugger's number | Small | **Done (2026-10-10, decision 70 of `CPU_CORE_SPEC.md`): the path is gone, WNS +0.048 ns set by the next families (section 35 of `TIMING.md`).** The worst path today (section 34 of `TIMING.md`). The read address of the CSR file goes through a "debugger's number / EX's instruction" multiplexer, and EX's exception checks are behind it. The debugger reads CSRs only while halted, so build EX's exception from `ex_csr_addr` alone and give the debugger checks of its own |
-| T2 | Separate EX's stall from the DTLB compare | Medium | **Done (2026-10-11, decision 73 of `CPU_CORE_SPEC.md`): a miss goes on to MR and waits there; the same cycle counts.** "Forwarding from MA → EX's address add → DTLB compare → stall" of section 32 of `TIMING.md`. A DTLB miss only needs to be known in MR. What taking back the D$ request involves when the stall comes a cycle later needs study |
-| T3 | Duplicate `ma_mem` | Small | Reduce the fanout of the first level (72). A small measure whose effect depends on placement |
-| T5 | The FPU / MDU start without the CSR check | Small | **Done (2026-10-11, decision 72 of `CPU_CORE_SPEC.md`).** Section 38 of `TIMING.md`: `ex_csr_addr` → CSR check → `ex_exc_pre` → `fpu_active` → `lsu_e_valid` → D$. Not a real path (a CSR instruction is none of those); give `mdu_active`, `fpu_active`, `d_tr_req` and `ex_late` an `ex_exc_pre` without the CSR term |
-| T6 | The DTLB's fault off `ex_exc` | Small | **Done (2026-10-12, decision 75 of `CPU_CORE_SPEC.md`): the fault goes to MR in a flip-flop; the same cycle counts.** The worst path of sections 41 and 42 of `TIMING.md` |
-| T7 | The DTLB's compare off the enable of `mr_paddr` | Small | **Done (2026-10-12, decision 78 of `CPU_CORE_SPEC.md`).** The worst path of section 43 of `TIMING.md` |
-| T4 | Data-side PMP compare a cycle earlier | Small to medium | **First step done (2026-10-11, decision 74 of `CPU_CORE_SPEC.md`): the NAPOT mask is kept in a register, which takes its add (4.7 ns) off the head of the path. The range compares themselves are still in MR.** The second family of section 35 of `TIMING.md` (276 of the worst 300): `pmpaddr` → PMP compare (14 levels of CARRY4) → cancel of the early request → the D$'s ROB, in one cycle. Register the range comparisons (or compare in EX against the DTLB's answer) so that MR only selects by priority |
+| W1 | **Write-validate of whole lines** | Medium | A copy writes the destination line by line, and today every line is first read (write-allocate: an L2 hit or a DRAM read) and then entirely overwritten. The MSHR already keeps a word and its byte enables for every word of the line (stores join it, M1), and F2 already lets an MSHR make its beats itself instead of asking the bus (`ms_zero`). An MSHR opened by a store to the first word of a line waits a few cycles before its read; if the stores that join it cover all 8 words, it makes its beats from them, without the read. Otherwise the read goes out a few cycles later than today. The kernel's copy loops (`uaccess.S`, `memcpy`) load 8 words and then store them in a row once the destination is aligned | The copy to user space (21 % of `sdread`, 6.6 % of `md5sum`, 3.6 % of `tftp`), `memcpy` (4.2 % of `forkexec`), the L2's reads. Confirm first where the copy's samples fall (the source's loads or the destination's stores: `perf script` addresses against the kernel's disassembly on the host) |
+| W2 | **Posted uncached stores** | Small to medium | A store to the uncached region (the peripherals) waits today for the bus's answer (`b`), the round trip through the peripheral bus and LiteX's bridge. Answer it when it is taken (as M1 does for cacheable stores below `STORE_ACK_LIMIT`), and make a later uncached load, an AMO and `fence` wait until the posted stores are done (the order the device sees stays the same). A bus error of a posted store can no longer be precise: report it as an interrupt, or keep the stores to addresses that can fail waiting. First check with `perf script` whether `liteeth_start_xmit`'s samples are its `memcpy_toio` (the stores) or its polling of LiteEth's state (the loads, which this would not change) | `liteeth_start_xmit` (10.7 % of `tftp`), the SD card driver's writes of its registers |
 
 ### E. What remains of the memory hierarchy
 
 | # | Theme | Size | Contents |
 |---|---|---|---|
-| E1a | Compare L2 replacement policies | Small | Pseudo-LRU against random (`SIM/SIM_L2` has a sweep, but they were not compared on the board's loads) |
-| E1b | Catch the SD card's DMA writes in the L2 | Medium | The D$ wait of `sdread` / `ext4read` (39 % / 31 %) did not go down with the L2. The DMA writes pass through the L2 as the D$'s write-through, and the D$ is thought to be blocked while each waits for memory's answer (not confirmed). Allocate the line in the L2 and answer early (section 8 of `CPU_L2_SPEC.md`). Confirm first with the same tools as M0 |
-| E2 | L1 from 16 to 32 KB | Medium | Staying VIPT (4 KB per way) needs 8 ways, which widens the D$ hit path (tight on timing). With the L2 the gain is also small now. Probably not done |
-| E3 | Larger TLBs (or a second level) | Medium | ITLB / DTLB have 8 entries. User-mode loads have 8 to 16 DTLB misses per 1000 instructions (section 14 of `BENCH.md`), the main cause of what user-mode loads lose after the L2. Add a second level of 32 to 64 entries |
+| E1b | The SD card's DMA writes in the L2 | Medium | The D$ wait of `sdread` / `ext4read` (34 % / 26 %) did not go down with the L2. The DMA's writes come as the D$'s write-through and pass through the L2 to memory as partial writes, each waiting for memory's answer; the D$ is thought to be held meanwhile (not confirmed). Allocate whole lines in the L2, or answer early with a write buffer (section 8 of `CPU_L2_SPEC.md`). Confirm first with the memory-wait events (M0) and W1's check of the copy |
+| E1a | Compare L2 replacement policies | Small | Pseudo-LRU against random on the board's loads (`SIM/SIM_L2` has a sweep) |
+| E2 | L1 from 16 to 32 KB | Medium | Front end empty is still 21 to 31 % of the kernel loads. Staying VIPT (4 KB a way) needs 8 ways, which widens the hit path. Probably not done; the L2 takes most of these misses in about 13 cycles |
 
-### F. Small ISA items (visible to Linux)
-
-| # | Theme | Size | Contents |
-|---|---|---|---|
-| F1 | Zbs (single-bit operations) | Small | **Done (2026-10-12, decision 77 of `CPU_CORE_SPEC.md`).** `bset` / `bclr` / `binv` / `bext`. With Zba / Zbb it completes the B extension. Only additions to the ALU |
-| F2 | Zicboz (`cbo.zero`) | Medium | **Done (2026-10-12, decision 76 of `CPU_CORE_SPEC.md`; `BENCH.md` 23: on the board `forkexec` −1.8 %, its D$ fills −9 %, its store waits halved).** The kernel already has `CONFIG_RISCV_ISA_ZICBOZ=y`. Zeroing pages allocates the D$ line as zeros without reading it from memory, cutting the reads at every fork, exec and page fault. Adds a new instruction to the D$. Goes well with M1 |
-| F3 | Zbc (carry-less multiply) | Small to medium | **Done (2026-10-12, decision 77; in the MDU, four cycles; `crc32c` is 5 % of `ls -lR`, `BENCH.md` 24). Board to follow.** The kernel has `CONFIG_RISCV_ISA_ZBC=y`. Used by CRC32 (ext4 metadata). Add to the MDU as a multi-cycle operation |
-| (M2) | Zicbop | | Put under M |
-
-### G / D. Finishing debug and measurement
+### M. What remains of overlapping memory waits
 
 | # | Theme | Size | Contents |
 |---|---|---|---|
-| G2 | Range matching of triggers (match 1, NAPOT) | Small | Today only exact matches, so gdb's `watch` stops only on accesses to the first address of a variable |
-| D2 | `perf` with function names | Small to medium | **Done (2026-10-12): `scripts/build_perf_libs.sh` (zlib, libelf), `build_perf.sh` uses them; `perf.sh` reports CoreMark and a fork / exec loop by function, the kernel's names included (`BENCH.md` 23).** Build elfutils statically and add it. `perf report` then works per function of the kernel and user programs. Needed to follow M0 down to "which functions wait on misses" |
+| M1b | The core not waiting for the answer of an accepted store | Small | 1 to 2 cycles a store, now that the D$ answers an accepted store at once (M1) |
+| M2 | Software prefetch (Zicbop) | Small to medium | A prefetch only opens an MSHR, answered at once. The kernel is built with `CONFIG_RISCV_ISA_ZICBOP=y`, so naming `zicbop` in the device tree starts its `prefetch` / `prefetchw`. The bus takes one read at a time, and a demand miss waits behind a prefetch (what turned M3 off), so it pays only where the code is ours (the matrix multiply: 2.42 → about 2.0 expected) |
+| M3b | A demand miss that can go before a prefetch | Medium | What would let M3 (I$ next line) be switched on: the arbiter or the L2 ending or putting aside a prefetch's burst when a demand miss comes. Measured first in simulation with the latency model |
+| M4 | Not stopping on a load miss (stall on use) | Large | The result of a missed load written later through the register file's second write port, with a pending bit per register. M0 found that a missed load is mostly used one or two instructions later (7.5 % hidden in `ldloop`, 39 % in the matrix kernels): it helps the matrix multiply, little else. About LUT +1,000 to 2,000 |
+
+### T. Timing
+
+WNS +0.664 ns. The ten worst paths are the load's value forwarded from MA into EX (section 44 of `TIMING.md`),
+the design's load-to-use path; shortening it means one more cycle of load use. Nothing is planned until a theme
+takes the margin away.
+
+| # | Theme | Size | Contents |
+|---|---|---|---|
+| T3 | Duplicate `ma_mem` | Small | Reduce the fanout of the first level. Its effect depends on placement |
+| T4 (second step) | The data side's PMP range compares a cycle earlier | Small to medium | The range compares (14 levels of CARRY4) are still in MR, before the cancel of the early request. Register them or compare in EX against the DTLB's answer |
+
+### G. Debug
+
+| # | Theme | Size | Contents |
+|---|---|---|---|
+| G2 | Range matches of the triggers (match 1, NAPOT) | Small | Today only exact matches, so gdb's `watch` stops only on accesses to the first address of a variable |
 
 ### C. Large themes (on hold)
 
 | # | Theme | Judgement |
 |---|---|---|
-| C1 | Misaligned accesses in hardware | About 1,070 cycles each (OpenSBI does them). Linux measures them as "slow" at boot and avoids them, so traps are rare. On hold until a load that needs them shows up |
-| C3 | Trying an ASIC (GF180MCU) | There is a workspace in `../mmRISC-2-GF180MCU`. When the core has settled |
+| C1 | Misaligned accesses in hardware | About 1,070 cycles each (OpenSBI does them). Linux measures them as slow at boot and avoids them, so traps are rare. On hold until a load needs them |
+| C3 | Trying an ASIC (GF180MCU) | A workspace is in `../mmRISC-2-GF180MCU`. When the core has settled |
 | C4 | Multi-core | Does not fit the A7-100T (about 2,190 slices left). The guide in section 6.4 of `CPU_CACHE_SPEC.md` is ready |
+| (C5) | Issuing an FLD with an FP operation (dual issue of memory and floating point) | FIR 1.53 → about 1.0, matrix multiply 1.7 → about 1.1, but fetch, decode and issue two wide is in effect a new pipeline. Not worth it at 50 MHz with the slices left |
 
 ---
 
 ## 4. Recommended order
 
-1. **T1** (small): get timing margin back. Only cutting the debugger's path
-2. **M0** (small): measure what the memory waits are made of. **Done** (`BENCH.md` 18): on the board stores
-   are up to 13.5 % of the cycles, dirty victim copies up to 3.7 %, the front end (I$) 19 to 30 % in kernel loads
-3. **M5** (small, new): the cheapest overlap M0 found. Then **M1 (store buffer)**, the largest item on the
-   core side. T4 / T2 wait until added logic takes the margin away (WNS +0.717 ns, `TIMING.md` 36)
-4. **Prefetch**: **M3 in the L2** with the I$'s fills in view (next line; the front end is 19 to 30 % of the
-   kernel loads' cycles), and **M2 (Zicbop)** for the code we write. Both meet the single-read bus (M0 (4))
-5. Then **E3 (TLB)** or **M4 (no stop on load misses)**; M0 says M4 hides little in code that uses the
-   value at once. T2 before M4
-6. In between, **F1 (Zbs)**, F2 / F3, G2
-7. C1 and C3 stay on hold
+0. **A 120-minute `stress.sh` on the current bitstream** (A1 / H1 again): the last one ran on the version of
+   2026-10-09, and the D$ has changed much since (M1, M5, F2, `FAST_READ`).
+1. **E3a, then E3b** (the second-level TLB): the largest measured loss of the user-mode loads (10 to 13 %),
+   and a few % of the kernel loads. E3a decides the size.
+2. **W1** (write-validate), after checking where the copy's samples fall: the copy to user space is the largest
+   single function of the kernel loads.
+3. **W2** (posted uncached stores), after the same check on `liteeth_start_xmit`.
+4. **E1b** if the measurement shows the D$ held by the SD card's DMA writes (`sdread` / `ext4read`).
+5. As margin or need calls for them: M1b, M2 / M3b, T3 / T4, G2. M4 and the C themes stay on hold.

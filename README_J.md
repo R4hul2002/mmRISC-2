@@ -4,33 +4,33 @@
 
 64bit RISC-V CPU を SystemVerilog で自作し、Digilent Arty A7-100T 上で Linux を動かすプロジェクト。周辺回路は LiteX から持ってくる。CPU が持つもの:
 
-- RV64GC(IMAFDC)+ Zba / Zbb / Zicond
+- RV64GC(IMAFDC)+ Zba / Zbb / Zbs / Zbc / Zicond / Zicboz
 - M / S / U モード、PMP
 - Sv39 MMU(ITLB / DTLB、ハードウェアのページテーブルウォーカ)
 - 8 段のインオーダ・パイプライン
 - 分岐予測(BTB 256 エントリ、gshare、戻りアドレススタック)
 - FPU(単精度・倍精度)。加減算・乗算・積和・変換は毎サイクル 1 件のパイプライン
-- L1 キャッシュ(I$ / D$ 各 16 KB、D$ はノンブロッキング・書き戻し)
+- L1 キャッシュ(I$ / D$ 各 16 KB、D$ はノンブロッキング・書き戻しで、コアはストアのミスを待たない)
 - **L2 キャッシュ(256 KB)**
 - SoC の DMA も D$ を通し、キャッシュの一貫性をハードウェアで保つ
 - 内蔵の CLINT / PLIC、Sstc(S モードのタイマ)
 - JTAG / cJTAG のオンチップデバッグ(Debug Spec 1.0、ハードウェアトリガ 4 本)
-- 性能カウンタ(Zihpm、Sscofpmf。Linux の `perf` で使える)
+- 性能カウンタ(Zihpm、Sscofpmf、Smcntrpmf。Linux の `perf` で関数名まで使える)
 
-## 現状(2026-10-09)
+## 現状(2026-10-12)
 
 Arty A7-100T の実機(50 MHz)で、LiteX BIOS → OpenSBI → **Linux 7.2** が SD カードの ext4
 から BusyBox のシェルまで起動し、Ethernet(DHCP、TFTP)も動く。120 分の負荷試験(メモリ・
-Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版でも PASS(2026-10-09)。
+Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版でも PASS(2026-10-09 の版)。
 
 | | |
 |---|---|
-| 性能(実機、Linux 上) | **2.786 CoreMark/MHz**(Zba/Zbb で作ったもの。rv64gc なら 2.498)、**1.496 DMIPS/MHz**。自作の始めの 1.584 / 0.823 から +76 % / +82 %。どちらも `-O2` での値で、速さを最大にするオプションで作ると **3.025 CoreMark/MHz**、1.542 DMIPS/MHz(`LitexSystem/docs/BENCH.md` 17 章)。浮動小数点は FIR 65.6 MFLOPS、行列積 41.2 MFLOPS(アセンブラ、50 MHz)。L2 キャッシュでカーネルが主の負荷(TFTP、SD の読み出し、`ls -lR`)が 1.5〜1.7 倍 |
+| 性能(実機、Linux 上) | **2.786 CoreMark/MHz**(Zba/Zbb で作ったもの。rv64gc なら 2.498)、**1.496 DMIPS/MHz**。自作の始めの 1.584 / 0.823 から +76 % / +82 %。どちらも `-O2` での値で、速さを最大にするオプションで作ると **3.025 CoreMark/MHz**、1.542 DMIPS/MHz(`LitexSystem/docs/BENCH.md` 17 章)。浮動小数点は FIR 65.6 MFLOPS、行列積 41.2 MFLOPS(アセンブラ、50 MHz)。L2 キャッシュでカーネルが主の負荷(TFTP、SD の読み出し、`ls -lR`)が 1.5〜1.7 倍になり、その後のメモリまわりの作業(ストアのミスを待たない、`cbo.zero`、バスなど)でその CPI がさらに 7〜11 % 下がった(`BENCH.md` 18〜25 章) |
 | ISA | RV64IMAFDC、Zicsr、Zifencei、Zicntr、Zihpm、**Zba、Zbb、Zbs、Zbc、Zicond**、Zihintpause、Zihintntl、**Zicboz**、M / S / U、Sv39、PMP 8 エントリ |
 | 特権の拡張 | **Sstc**(S モードのタイマ)、**Sscofpmf**(性能カウンタのあふれ割り込み)、**Smcntrpmf**、**Sdtrig**(デバッグのトリガ 4 本)、特権仕様 1.12 |
-| 性能カウンタ | `hpmcounter3`〜`6`、イベント 19 種(キャッシュ・L2・TLB のミス、分岐予測ミス、停止の理由)。Linux の `perf stat` / `perf record` で使える |
+| 性能カウンタ | `hpmcounter3`〜`6`、イベント 26 種(キャッシュ・L2・TLB のミス、分岐予測ミス、停止の理由、メモリの待ちの内訳、I$ の先読み)。Linux の `perf stat` / `perf record`、関数ごとの `perf report` で使える |
 | デバッグ | JTAG / cJTAG(Debug Spec 1.0)。OpenOCD / gdb で halt / step / レジスタ / メモリ、ソフトウェアとハードウェアのブレークポイント、ウォッチポイント(動いている Linux カーネルにも置ける) |
-| FPGA | 50 MHz で WNS +0.159 ns、LUT 46,957 / 63,400(74.1 %)、スライス 91.4 %、ブロック RAM 108.5 / 135 タイル(L2 を含む) |
+| FPGA | 50 MHz で WNS +0.664 ns、LUT 46,928 / 63,400(74.0 %)、スライス 86.2 %、ブロック RAM 108.5 / 135 タイル(L2 を含む) |
 
 **コアの構成**
 
@@ -41,8 +41,9 @@ Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版�
 - ロード・ストアは EX から D$ に出し、ヒットの答えは 2 サイクル後(命令が MA に着いたサイクル)に見える
 - そのため MA は待たず、ヒットするロード・ストアは**毎サイクル 1 本ずつ**(スループット 1)進む
 - 待つのは、ロードの結果を直後の命令が使うとき(ロードユース)だけ。依存するロードの連鎖で 1 回 約 3 サイクル
-- 乗算 1〜2 サイクル、除算は早期終了つき
+- 乗算 1〜2 サイクル、除算は早期終了つき、キャリーなし乗算(Zbc)5 サイクル
 - L1 キャッシュ: I$ / D$ 各 16 KiB(4 ウェイ、64 B 行)、D$ はノンブロッキング・ライトバック
+- ミスしたストアは D$ が受けた時点で答え、D$ は汚れた追い出しの写しより先に読み込みを頼む。`cbo.zero` はメモリを読まずにゼロのラインを作る
 - SoC の DMA も D$ を通るので、一貫性はハードウェアで保つ
 - FPU(F / D): 積和 1 本の 9 段のパイプラインで、依存がなければ毎サイクル 1 件。除算・平方根は反復
 - L2 キャッシュ: 256 KB(4 ウェイ、64 B 行、書き戻し)を L1 と LiteDRAM の間に置く
@@ -58,7 +59,7 @@ Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版�
 
 | 文書 | 内容 |
 |---|---|
-| [`RTL/CPU/CPU_CORE/CPU_CORE_SPEC.md`](RTL/CPU/CPU_CORE/CPU_CORE_SPEC_J.md) | CPU コア(命令セット、パイプライン、MMU、CSR、デバッグ、決定事項 1〜69) |
+| [`RTL/CPU/CPU_CORE/CPU_CORE_SPEC.md`](RTL/CPU/CPU_CORE/CPU_CORE_SPEC_J.md) | CPU コア(命令セット、パイプライン、MMU、CSR、デバッグ、決定事項 1〜78) |
 | [`RTL/CPU/CPU_CACHE/CPU_CACHE_SPEC.md`](RTL/CPU/CPU_CACHE/CPU_CACHE_SPEC_J.md) | L1 キャッシュ(パラメータ、インタフェース、動作、検証結果) |
 | [`RTL/CPU/CPU_L2/CPU_L2_SPEC.md`](RTL/CPU/CPU_L2/CPU_L2_SPEC_J.md) | L2 キャッシュ(方式、動作、資源、検証、実機の効果) |
 | [`RTL/CPU/CPU_DBG/CPU_DBG_SPEC.md`](RTL/CPU/CPU_DBG/CPU_DBG_SPEC_J.md) | デバッグ論理(JTAG/cJTAG DTM、DM、認証) |
@@ -71,7 +72,7 @@ Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版�
 | [`LitexSystem/docs/ROADMAP.md`](LitexSystem/docs/ROADMAP_J.md) | 次の設計テーマ |
 | [`LitexSystem/software/boot/README.md`](LitexSystem/software/boot/README_J.md) | SD カードの作り方、Ethernet、TFTP ネットブート、負荷試験、配布しているバイナリ |
 | [`LitexSystem/software/bench/README.md`](LitexSystem/software/bench/README_J.md) | 実機のベンチマークと `perf` |
-| [`SIM/SIM_CORE/README.md`](SIM/SIM_CORE/README_J.md) | コアの検証環境(自作試験 33 本、riscv-tests、バグ注入) |
+| [`SIM/SIM_CORE/README.md`](SIM/SIM_CORE/README_J.md) | コアの検証環境(自作試験 34 本、riscv-tests、バグ注入) |
 
 ## ディレクトリ構成
 
@@ -87,10 +88,10 @@ RTL/
 │   │   ├── CORE_DEC/       命令デコーダ
 │   │   ├── CORE_DECOMP/    圧縮命令(C)を 32bit 命令に伸張
 │   │   ├── CORE_CSR/       CSR とトラップ状態(M / S / U、デバッグ、トリガ、性能カウンタ)
-│   │   ├── CORE_MDU/       乗除算器(M)
+│   │   ├── CORE_MDU/       乗除算器(M)、キャリーなし乗算(Zbc)
 │   │   ├── CORE_FRF/       浮動小数点レジスタファイル(32×64、3R2W)
 │   │   ├── CORE_RF/        整数レジスタファイル(32×64bit、2R2W)
-│   │   ├── CORE_EXU/       ALU(Zba / Zbb / Zicond を含む)、分岐条件、アドレス生成
+│   │   ├── CORE_EXU/       ALU(Zba / Zbb / Zbs / Zicond を含む)、分岐条件、アドレス生成
 │   │   └── CORE_LSU/       ロード/ストアユニット(EX からの早出し、データキャッシュポート)
 │   ├── CPU_MMU/        Sv39 MMU と PMP
 │   │   ├── CORE_MMU/       ITLB / DTLB / ウォーカ / PMP のまとめ
@@ -155,13 +156,13 @@ LitexRocket/        Rocket 構成の LiteX 一式(ワークスペース、OpenSB
 
 | コマンド | 内容 | 結果 |
 |---|---|---|
-| `cd SIM/SIM_CORE && make` | CPU コアの自作試験 33 本(命令、トラップ、MMU、PMP、デバッグ、分岐予測、トリガ、性能カウンタ ほか) | 全 PASS |
+| `cd SIM/SIM_CORE && make` | CPU コアの自作試験 34 本(命令、トラップ、MMU、PMP、デバッグ、分岐予測、トリガ、性能カウンタ ほか) | 全 PASS |
 | `cd SIM/SIM_CORE && make stress` | 両キャッシュポートに背圧を入れて同じ試験 | 全 PASS |
 | `cd SIM/SIM_CORE && make riscv-tests` | 公式 riscv-tests(rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzbs / uzbc / uzicond / mi / si) | 178 PASS、既知の不合格 4(未実装機能を要求する試験) |
 | `cd SIM/SIM_CORE && make riscv-tests-v` | 同じ試験を仮想記憶(Sv39)の環境で | 154 PASS、既知の不合格 4 |
 | `cd SIM/SIM_CORE && make mdu / clint / plic` | 乗除算器(参照モデル 20 万演算)、CLINT(4 ハート)、PLIC | PASS |
 | `cd SIM/SIM_CORE && ./bug_inject.sh` | バグ注入 339 種(背圧あり/なしの両方) | 全て検出 |
-| `cd SIM/SIM_SYS && make` | コア + 本物の L1 / L2 キャッシュ + AXI + DMA ポート(自作試験 26 本、DMA・PMU などのプログラム 4 本)。`PARAMS=-GL2_SIZE=0` で L2 なし | 全 PASS(L2 あり / なし) |
+| `cd SIM/SIM_SYS && make` | コア + 本物の L1 / L2 キャッシュ + AXI + DMA ポート(自作試験 27 本、DMA・PMU などのプログラム 4 本)。`PARAMS=-GL2_SIZE=0` で L2 なし | 全 PASS(L2 あり / なし) |
 | `cd SIM/SIM_SYS && make riscv-tests` | riscv-tests を本物のキャッシュ越しに | 133 PASS、既知の不合格 4 |
 | `cd SIM/SIM_SYS && ./bug_inject.sh` | バグ注入 23 種(浮動小数点の核のサイクルの上限 `bench/fploop` と M0 のメモリの待ちのイベントを含む) | 全て検出 |
 | `cd SIM/SIM_CACHE && make` | L1 キャッシュ全試験(CPU と DMA ポートを同じラインで同時にランダムに、取り消しを含む) | PASS 64,914 チェック |
@@ -223,12 +224,12 @@ vivado -mode batch -source build.tcl
 |---|---|
 | JTAG / cJTAG デバッグ論理 | 完了。コアにつないで実機で halt / step / レジスタ / メモリ / ブレークポイント |
 | L1 命令/データキャッシュ | 完了(掃引・バグ注入、CPU と DMA の同時ランダム試験まで)。DMA ポート付き |
-| CPU コア | RV64GC + Zba / Zbb / Zicond、M / S / U、8 段パイプライン、分岐予測(gshare) |
+| CPU コア | RV64GC + Zba / Zbb / Zbs / Zbc / Zicond / Zicboz、M / S / U、8 段パイプライン、分岐予測(gshare) |
 | MMU (Sv39) と PMP | 完了 |
 | LiteX SoC 上の Linux | 実機で SD カードの ext4 から BusyBox まで。Ethernet、TFTP ネットブート。負荷試験 120 分 PASS |
 | 性能 | 2.786 CoreMark/MHz、1.496 DMIPS/MHz(実機、Linux 上、`-O2`。最大の最適化で 3.025 / 1.542)。性能カウンタと `perf` で実機の内訳を測れる |
 | L2 キャッシュ | 完了(256 KB、[`CPU_L2_SPEC.md`](RTL/CPU/CPU_L2/CPU_L2_SPEC_J.md))。実機でカーネルの負荷が 1.2〜1.7 倍 |
-| 次のテーマ | 2 段目の TLB(ユーザモードの負荷)、FPU のパイプライン化の前のタイミングの手当て([`ROADMAP.md`](LitexSystem/docs/ROADMAP_J.md)) |
+| 次のテーマ | 2 段目の TLB(ユーザモードの負荷)、読まずに書くライン全体の書き込みとキャッシュ無しのストアを待たないこと(カーネルのコピーとドライバ)([`ROADMAP.md`](LitexSystem/docs/ROADMAP_J.md)) |
 
 ## ライセンス
 

@@ -28,12 +28,12 @@
 | `make trace` | リタイアトレース付きで 1 本走らせる |
 | `make wave` | VCD を出す |
 | `make iverilog` | Icarus Verilog で同じ試験 |
-| `make mdu` | `CORE_MDU` を参照モデルと突き合わせる(`tb_MDU.sv`、既定 20 万演算)。境界値のオペランド、サイクル数(MUL / MULW は 1、MULH 系は 2)、答えを遅れて受け取る場合、途中の kill。プログラムからは選べないものを見る |
+| `make mdu` | `CORE_MDU` を参照モデルと突き合わせる(`tb_MDU.sv`、既定 20 万演算)。境界値のオペランド、サイクル数(MUL / MULW は 1、MULH 系は 2、CLMUL 系は 5。Zbc の定義と突き合わせる)、答えを遅れて受け取る場合、途中の kill。プログラムからは選べないものを見る |
 | `make clint` | `CPU_CLINT` を 4 ハート構成で直接叩く(`tb_CLINT.sv`)。単一コアのプログラムからは届かないレジスタマップの検査 |
 | `make plic` | `CPU_PLIC` のレジスタポートを直接叩く(`tb_PLIC.sv`) |
-| `make riscv-tests` | 公式 riscv-tests(rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzicond / mi / si)。`RVTESTS` でリポジトリの場所を指定 |
+| `make riscv-tests` | 公式 riscv-tests(rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzbs / uzbc / uzicond / mi / si)。`RVTESTS` でリポジトリの場所を指定 |
 | `make riscv-tests-v` | 同じ試験を仮想記憶の環境(`-v`、Sv39 でページを割り当てながら走る)で |
-| `make bugs` / `./bug_inject.sh` | バグ注入 315 種(背圧あり/なしの両方で判定。M211〜M231 はデバッグモード、M298〜M314 はトリガ、M320〜M340 は性能カウンタ、M341〜M358 はパイプライン化した FPU の接続とレジスタファイル、M240 以降は EX からの早出し。`CORE_MDU` の変異は `tb_MDU` でも判定) |
+| `make bugs` / `./bug_inject.sh` | バグ注入 339 種(背圧あり/なしの両方で判定。M211〜M231 はデバッグモード、M298〜M314 はトリガ、M320〜M340 は性能カウンタ、M341〜M358 はパイプライン化した FPU の接続とレジスタファイル、M361〜M370 と M384 は T2 / T4 / T6 / T7(決定 73〜75、78)、M371〜M376 は Zicboz、M377〜M383 は Zbs / Zbc、M240 以降は EX からの早出し。`CORE_MDU` の変異は `tb_MDU` でも判定) |
 | `make lint` | Verilator lint |
 
 プラスアーグ:
@@ -79,8 +79,8 @@ x10〜x30 だけを使うこと。`TEST_INIT` が既定のトラップハンド�
 | `t10_atomic` | LR/SC と全 AMO の 32/64bit、不整列 |
 | `t11_fp` | `mstatus.FS`、NaN-boxing、`fcsr`/丸めモード、FP ストアのデータ源、FPU と他ユニットのハザード |
 | `t12_priv` | S / U モード、委譲、SRET。M → S → U と戻る経路、割り込みの委譲、`mstatus` の TVM / TW / TSR(公式の rv64si は U モードまで行かない) |
-| `t13_pmp` | PMP が実際にアクセスを止めること: 番号の小さいエントリが優先、M はロックされていないエントリを素通りしロックされたものには従う、R / W / X の区別 |
-| `t14_mmu` | Sv39: 手で作ったページテーブルで 3 段の変換、権限ビット、`SFENCE.VMA` |
+| `t13_pmp` | PMP が実際にアクセスを止めること: 番号の小さいエントリが優先、M はロックされていないエントリを素通りしロックされたものには従う、R / W / X の区別。8 バイトの NAPOT 領域(`pmpaddr` の横に持つマスク、決定 74) |
+| `t14_mmu` | Sv39: 手で作ったページテーブルで 3 段の変換、権限ビット、`SFENCE.VMA`。探索の後でページフォールトになる AMO とロード(T2)、ストアとして検査される `cbo.zero`(W と D、ページフォールト、`menvcfg.CBZE`) |
 | `t15_plic` | PLIC をプログラムから: 線を上げる → 外部割り込み → ハンドラで claim / complete → 戻る |
 | `t16_bench` | 計測用(前端に効くループ 3 種)。バグ注入では予測器が働いていることを BENCH_LIMIT のサイクル数で確かめる |
 | `t17_btb` | 分岐予測の誤フェッチ: 予測で捨てた命令をフェッチ部が取り戻すこと |
@@ -94,12 +94,13 @@ x10〜x30 だけを使うこと。`TEST_INIT` が既定のトラップハンド�
 | `t25_lsu` | EX から早出しした要求(`CPU_CORE_SPEC.md` 5.4): 取り消したストアの後ろのロード、トラップ時に飛んでいる答え、トラップの後ろの PLIC の claim(副作用のある I/O ロードは前の命令の確定を待つ)、ハンドラが飛ばすストア |
 | `t26_late` | ロードの値で分岐する条件分岐(MR で確定する「遅い分岐」、`CPU_CORE_SPEC.md` 決定 64): 6 種の比較 × ロードが rs1 / rs2 / 両方、予測の当たり外れの両方向、外れたときに EX にいたストア・フォールトするロード・除算・CSR 書き込みが何も残さないこと、遅い分岐のすぐ後ろの分岐、ロードがフォールトしたときトラップが勝つこと、遅い分岐の後ろで待つループの分岐の時間(待たないと BTB が学ばない)、ロードした番地への jalr(こちらは EX で待つ) |
 | `t27_fence` | FENCE(`CPU_CORE_SPEC.md` 5.3): 全種のエンコーディング(`fence.tso`、`pause`、予約フィールドが立ったものはトラップせず rd も書かない)、ストア・キャッシュしないストア / ロードのすぐ後ろ、ロードの答えが捨てられる途中のトラップハンドラの先頭。前のアクセスが終わる前に FENCE が出ないことはテストベンチが毎回確かめる |
-| `t28_bitmanip` | Zba / Zbb(`CPU_CORE_SPEC.md` 決定 65)を Python のモデルと突き合わせる(`tools/gen_t28.py` が作る。手で書き換えない)。47 の命令・即値のそれぞれについて、端の値 8 個の組と xorshift64 の 32 組を回し、結果を回転・xor・乗算でまとめたチェックサムを比べる。新しい符号の隣(PACKW、未定義の単項演算、Zbs)が不正命令のままであること |
-| `t29_sstc` | Sstc と特権仕様 1.12 の CSR(`CPU_CORE_SPEC.md` 決定 66): `menvcfg` / `senvcfg` / `mcountinhibit` の実装フィールド、CY / IR でカウンタが止まること、STCE の有無で `mip.STIP` が書けるビットか比較かが変わること、S からの `stimecmp` が STCE と `mcounteren.TM` の両方を要ること、`stimecmp` からの S タイマ割り込みを S モードで受けること |
+| `t28_bitmanip` | Zba / Zbb / Zbs / Zbc(`CPU_CORE_SPEC.md` 決定 65・77)を Python のモデルと突き合わせる(`tools/gen_t28.py` が作る。手で書き換えない)。78 の命令・即値のそれぞれについて、端の値 8 個の組と xorshift64 の 32 組を回し、結果を回転・xor・乗算でまとめたチェックサムを比べる。新しい符号の隣(PACKW、未定義の単項演算、Zbs と Zbc の隣の未定義)が不正命令のままであること |
+| `t29_sstc` | Sstc と特権仕様 1.12 の CSR(`CPU_CORE_SPEC.md` 決定 66): `menvcfg` / `senvcfg` / `mcountinhibit` の実装フィールド、CY / IR でカウンタが止まること、STCE の有無で `mip.STIP` が書けるビットか比較かが変わること、S からの `stimecmp` が STCE と `mcounteren.TM` の両方を要ること、`stimecmp` からの S タイマ割り込みを S モードで受けること。`menvcfg.CBZE` / `senvcfg.CBZE`(ビット 7) |
 | `t30_trig` | Sdtrig の例外を起こすトリガ(`CPU_CORE_SPEC.md` 決定 67): `tselect` / `tdata1` / `tdata2` / `tdata3` / `tinfo` / `tcontrol` の読み書き、M モードの実行トリガと `tcontrol.MTE` / MPTE、ハンドラ内では発火しないこと、ロード・ストア・AMO のトリガ(アクセスが起きない、mtval、完全一致、不整列より優先)、m / s / u ビット(S・U モード)、捨てられる経路(予測ミスの後ろ、ECALL の後ろの命令とロード)では発火も hit も無いこと、不正命令より優先すること |
 | `t31_zicond` | Zicond(`CPU_CORE_SPEC.md` 決定 68): `czero.eqz` / `czero.nez` の値の表(rs2 の最下位・最上位・上位半分の 1 ビットだけ)、rd = rs1 / rd = rs2 / rs1 = rs2 / x0、直前の ALU・ロードからのフォワーディング、結果を分岐とアドレスに使う場合。PAUSE・NTL.*・C.NTL.* がトラップせず何も書かないこと |
 | `t32_pmu` | 性能カウンタ(Zihpm、Sscofpmf、`CPU_CORE_SPEC.md` 決定 69): `mhpmcounter` / `mhpmevent` の実装範囲と 7〜31 の読み出し 0、`mcountinhibit` の HPM ビット、サイクル・命令数が `mcycle` / `minstret` の差と一致すること、ロード・ストア・条件分岐(MR で解決する分岐を含む)・例外の正確な数、予測ミス・ロードユース・MDU 待ち・フロントエンド / バックエンドの停止が数えられること、`mcountinhibit` と MINH / UINH、あふれで OF と LCOFIP が立ち M で割り込み(cause 13)を取ること、OF が立っていれば再び割り込まないこと、S への委譲(`sip` / `sie`)、`hpmcounterN` と `scountovf` の `mcounteren` / `scounteren` による制限、Smcntrpmf(`mcyclecfg` / `minstretcfg`)。キャッシュと TLB のイベントは SIM_SYS の `progs/d04_pmu.S` |
 | `t33_fpipe` | パイプライン化した FPU(`CPU_CORE_SPEC.md` 10.11): 独立な FMADD.D 16 本が 1 サイクルに 1 本で流れること、依存の連鎖と整数への答えを直後の ADDI へ、直前の答えの FSD、FPU がまだ書いていないレジスタへの FLD・整数命令の書き込み(WAW)、FMV.X.D を分岐に・FEQ.D をアドレスに、直後の FRFLAGS、トラップの後ろと FENCE.I の後ろ(後ろの命令はストアで書き換えておく)で取り消された演算、整数⇄倍精度、除算の後ろ、遅い分岐の影の FADD、ロードの直後の FP 演算、FPU の整数の答えをあとでレジスタファイルから読む(rs1 / rs2)、FLD の 1〜5 命令後の読み出し(書き込みと同じサイクルの読み出し) |
+| `t34_cbozero` | `cbo.zero`(Zicboz、`CPU_CORE_SPEC.md` 決定 76): rs1 のまわりの 64 バイトのブロックがそのどのバイトからでもゼロになり、まわりのブロックは残る。周辺では store access fault、M 未満では `menvcfg.CBZE`(U ではさらに `senvcfg.CBZE`)が許さなければ不正命令。Zicbom の `cbo.clean` / `flush` / `inval` は不正命令 |
 
 ## テストベンチが自動で見ているもの
 

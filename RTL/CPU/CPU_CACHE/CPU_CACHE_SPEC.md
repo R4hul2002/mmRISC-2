@@ -4,7 +4,9 @@
 
 - Version: Rev-2 (2026-09-19), revised to match the implementation (the design plan of Rev-1 and the
   implementation specification merged)
-- Last updated: 2026-10-05 (early issue from EX and cancel, 2-cycle hits, performance counter events)
+- Last updated: 2026-10-12 (store misses answered when accepted and the fill asked for before the victim is
+  copied, 2026-10-10; the I$'s next-line prefetch, off by default, 2026-10-11; `FAST_READ` of the bus and
+  `cbo.zero`, 2026-10-12)
 - Scope: `RTL/CPU/CPU_CACHE/` (L1 instruction / data caches), `SIM/SIM_CACHE` (verification),
   `RTL/CPU/CPU_TOP/` (integration)
 - The defaults are equivalent to the L1 of LiteX + Rocket `LitexConfig_linux_1_1`. Number of sets,
@@ -395,7 +397,7 @@ All synchronous, `valid` / `ready` handshakes. Answers are returned **in request
 | `d_req_valid` / `d_req_ready` | in / out | Request |
 | `d_req_addr[PADDR_WIDTH-1:0]` | in | Address (must be aligned to the access size) |
 | `d_req_size[1:0]` | in | 0: 1 byte, 1: 2 bytes, 2: 4 bytes, 3: 8 bytes |
-| `d_req_cmd[3:0]` | in | Table of 5.3 |
+| `d_req_cmd[4:0]` | in | Table of 5.3 (5 bits since `ZERO`, 2026-10-12) |
 | `d_req_wdata[XLEN-1:0]` | in | Write / AMO data (right-aligned) |
 | `d_req_paddr[PADDR_WIDTH-1:0]` | in | Physical address. Used for the tag compare, fill, write-back and uncached accesses. See 5.6 |
 | `d_req_cancel` | in | **Cancels the request in stage 1** (valid in the cycle `d_req_paddr` is passed). Touches none of the arrays, dirty bits, reservation, MSHRs or bus. Has no effect on a request waiting in stage 1 (one that has already received its physical address). The core uses it in MR to take back requests issued early from EX (`CPU_CORE_SPEC.md` 5.4) |
@@ -834,14 +836,14 @@ if it wants dirty lines written back before a reset.
 
 | Command | Contents |
 |---|---|
-| `make run` | Runs all 12 sections with the default configuration (Verilator) |
+| `make run` | Runs all 21 sections with the default configuration (Verilator) |
 | `make wave` | Runs with `+vcd` and writes `tb_CACHE.vcd` |
 | `make iverilog` | Runs the same tests on Icarus Verilog (about 90 seconds) |
 | `make perf` | Throughput of consecutive hits / consecutive misses (8.4) |
 | `make wave-perf` | The same as 4 VCDs + GTKWave formats (8.4) |
 | `make lint` | Verilator lint |
 | `./sweep.sh` | Runs 19 parameter configurations in parallel |
-| `./bug_inject.sh` | Injects 18 bugs one at a time and checks that they are detected |
+| `./bug_inject.sh` | Injects 59 bugs one at a time and checks that they are detected |
 
 `make run PLUSARGS="+from=4 +to=6"` narrows the sections. `+ops=<n>` changes the number of random
 operations (default 4000). `+hb=<cycles>` prints progress (Icarus takes time).
@@ -869,6 +871,8 @@ operations (default 4000). `+hb=<cycles>` prints progress (Icarus takes time).
 | 17 | CPU and DMA (second port) at the same time, at random: the CPU does loads / stores of every size / AMO / LR/SC / FENCE / FLUSH, the DMA does `STWTHR` and reads. Three times as many lines as ways are placed in 4 sets, causing evictions, fills and write-backs all the time. The CPU uses the even words of each line and the DMA the odd words, so they never conflict on the same word and the reference model stays exact, while always meeting on the same lines. Memory drops ready at random and sometimes stops the write address with `aw_hold`. 20000 operations by default (`+mops=<n>`) |
 | 18 | Whether a request waiting in stage 1 remembers a forwarded write: an AMO right after a store held in the middle of a fill (the distance from the fill varied from 0 to 24 cycles), a miss in the same set waiting for an MSHR right after a store hit |
 | 19 | Cancel (`d_req_cancel`): cancelling a store hit / miss / AMO / LR / SC / uncached load and store, and checking that nothing happened (a later load reads the old value, no fill, bus access or reservation, no reservation even from an LR that hits, the reservation survives a cancelled SC, a store to a clean line does not set dirty). Then 25 % of the requests of a random test of 3000 operations are cancelled, and finally every word of the memory image is compared |
+| 20 | Next-line prefetch of the I$ (`PREFETCH`): a run through four lines of a page served from the prefetch buffer, nothing prefetched across a 4 KB page, `fence.i` drops the buffer (also while the prefetch is on the bus, and the line is fetched again with its new data), a miss in the middle of the prefetched line (word `lw-1` and `lw/2`, so that every block size of the sweep has them); the number of reads on the bus is counted |
+| 21 | `cbo.zero` (`CMD_ZERO`): a clean line, a dirty line, a line not in the cache with a dirty victim (no read on the bus, the victim written back), a store right behind it, behind a store miss of the same line, an address in the middle of the block, the uncached region (an error), the end of a reservation, and the DMA port reading and writing through a zeroed line; every word of memory is compared at the end. `cbo.zero` is also among the random operations of section 11 |
 
 Requests are fed from a FIFO every cycle. So array reads and writes in the same cycle (forwarding) and
 MSHR conflicts really happen.
@@ -899,6 +903,9 @@ MSHR conflicts really happen.
   checks), 18 sweep configurations **all PASS**. With the RTL before the fix all 4 items of 16 fail. Bug
   injections M23 to M25 added (a fill does not wait for the queue / a fill does not wait for single writes
   / a single write overtakes the queue), **all detected**
+- 2026-10-12 (the latest): sections 20 (I$ prefetch, 2026-10-11) and 21 (`cbo.zero`, 2026-10-12) added.
+  Default configuration **PASS (64,914 checks)**, 19 sweep configurations **all PASS**, **59 bug injections all
+  detected** (M55 / M56 for `FAST_READ`, M57 to M60 for `cbo.zero`)
 - 2026-09-26, sections 17 and 18 added. 17 found 2 real bugs (item 5 of 4.3 above) and 1 testbench bug (it
   wrote the queue of expected values even when full, overwriting old expected values in long sequences
   without SC's `d_drain`). After the fixes, the default configuration PASSes, the 18 sweep configurations

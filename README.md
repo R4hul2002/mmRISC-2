@@ -5,33 +5,33 @@
 A home-made 64-bit RISC-V CPU written in SystemVerilog that runs Linux on a Digilent Arty A7-100T. The
 peripherals come from LiteX. The CPU has:
 
-- RV64GC (IMAFDC) + Zba / Zbb / Zicond
+- RV64GC (IMAFDC) + Zba / Zbb / Zbs / Zbc / Zicond / Zicboz
 - M / S / U modes, PMP
 - Sv39 MMU (ITLB / DTLB, hardware page table walker)
 - An 8-stage in-order pipeline
 - Branch prediction (256-entry BTB, gshare, return address stack)
 - FPU (single and double precision). Add / subtract, multiply, multiply-add and conversions in a pipeline that takes one operation every cycle
-- L1 caches (I$ / D$ 16 KB each; the D$ is non-blocking and write-back)
+- L1 caches (I$ / D$ 16 KB each; the D$ is non-blocking and write-back, and the core does not wait for store misses)
 - **L2 cache (256 KB)**
 - The SoC's DMA also goes through the D$, and cache coherence is kept by hardware
 - Built-in CLINT / PLIC, Sstc (S-mode timer)
 - JTAG / cJTAG on-chip debug (Debug Spec 1.0, 4 hardware triggers)
-- Performance counters (Zihpm, Sscofpmf; usable with Linux's `perf`)
+- Performance counters (Zihpm, Sscofpmf, Smcntrpmf; usable with Linux's `perf`, down to function names)
 
-## Status (2026-10-09)
+## Status (2026-10-12)
 
 On the Arty A7-100T board (50 MHz), LiteX BIOS → OpenSBI → **Linux 7.2** boots from the ext4 of the SD
 card to the BusyBox shell, and Ethernet (DHCP, TFTP) works. The 120-minute stress test (memory, Ethernet
-and SD card checked at the same time) passes with the L2 cache as well (2026-10-09).
+and SD card checked at the same time) passes with the L2 cache as well (on the version of 2026-10-09).
 
 | | |
 |---|---|
-| Performance (board, under Linux) | **2.786 CoreMark/MHz** (built with Zba/Zbb; 2.498 for rv64gc), **1.496 DMIPS/MHz**. +76 % / +82 % from the 1.584 / 0.823 of the first home-made version. Both are `-O2` values; built with the options that make it fastest, **3.025 CoreMark/MHz** and 1.542 DMIPS/MHz (section 17 of `LitexSystem/docs/BENCH.md`). Floating point: FIR 65.6 MFLOPS, matrix multiply 41.2 MFLOPS (assembler, 50 MHz). The L2 cache makes kernel-heavy loads (TFTP, SD reads, `ls -lR`) 1.5 to 1.7 times faster |
+| Performance (board, under Linux) | **2.786 CoreMark/MHz** (built with Zba/Zbb; 2.498 for rv64gc), **1.496 DMIPS/MHz**. +76 % / +82 % from the 1.584 / 0.823 of the first home-made version. Both are `-O2` values; built with the options that make it fastest, **3.025 CoreMark/MHz** and 1.542 DMIPS/MHz (section 17 of `LitexSystem/docs/BENCH.md`). Floating point: FIR 65.6 MFLOPS, matrix multiply 41.2 MFLOPS (assembler, 50 MHz). The L2 cache makes kernel-heavy loads (TFTP, SD reads, `ls -lR`) 1.5 to 1.7 times faster, and the memory work since (store misses not waited for, `cbo.zero`, the bus and more) took another 7 to 11 % off their CPI (sections 18 to 25 of `BENCH.md`) |
 | ISA | RV64IMAFDC, Zicsr, Zifencei, Zicntr, Zihpm, **Zba, Zbb, Zbs, Zbc, Zicond**, Zihintpause, Zihintntl, **Zicboz**, M / S / U, Sv39, PMP 8 entries |
 | Privileged extensions | **Sstc** (S-mode timer), **Sscofpmf** (overflow interrupts of the performance counters), **Smcntrpmf**, **Sdtrig** (4 debug triggers), privileged spec 1.12 |
-| Performance counters | `hpmcounter3` to `6`, 19 events (cache, L2 and TLB misses, branch mispredictions, reasons for stalls). Usable with Linux's `perf stat` / `perf record` |
+| Performance counters | `hpmcounter3` to `6`, 26 events (cache, L2 and TLB misses, branch mispredictions, reasons for stalls, what the memory waits are made of, I$ prefetches). Usable with Linux's `perf stat` / `perf record`, and `perf report` by function |
 | Debug | JTAG / cJTAG (Debug Spec 1.0). Halt / step / registers / memory, software and hardware breakpoints and watchpoints with OpenOCD / gdb (they can be put on a running Linux kernel too) |
-| FPGA | WNS +0.159 ns at 50 MHz, LUT 46,957 / 63,400 (74.1 %), slices 91.4 %, block RAM 108.5 / 135 tiles (L2 included) |
+| FPGA | WNS +0.664 ns at 50 MHz, LUT 46,928 / 63,400 (74.0 %), slices 86.2 %, block RAM 108.5 / 135 tiles (L2 included) |
 
 **The core**
 
@@ -42,8 +42,9 @@ and SD card checked at the same time) passes with the L2 cache as well (2026-10-
 - Loads and stores go to the D$ from EX, and the answer of a hit is visible 2 cycles later (in the cycle the instruction reaches MA)
 - So MA does not wait, and loads and stores that hit go at **one every cycle** (throughput 1)
 - The only wait is when the next instruction uses the result of a load (load-use). A chain of dependent loads takes about 3 cycles each
-- Multiply in 1 to 2 cycles, divide with early termination
+- Multiply in 1 to 2 cycles, divide with early termination, carry-less multiply (Zbc) in 5 cycles
 - L1 caches: I$ / D$ 16 KiB each (4 ways, 64 B lines); the D$ is non-blocking and write-back
+- A store that misses is answered when the D$ takes it, and the D$ asks for the fill before it copies a dirty victim out; `cbo.zero` makes a line of zeros without reading memory
 - The SoC's DMA goes through the D$ too, so coherence is kept by hardware
 - FPU (F / D): a 9-stage pipeline around one multiply-add datapath, one operation every cycle when there is no dependency. Divide and square root iterate
 - L2 cache: 256 KB (4 ways, 64 B lines, write-back) between the L1 and LiteDRAM
@@ -60,7 +61,7 @@ Every document has a Japanese version next to it (`XXXX.md` is English, `XXXX_J.
 
 | Document | Contents |
 |---|---|
-| [`RTL/CPU/CPU_CORE/CPU_CORE_SPEC.md`](RTL/CPU/CPU_CORE/CPU_CORE_SPEC.md) | CPU core (instruction set, pipeline, MMU, CSRs, debug, decisions 1 to 69) |
+| [`RTL/CPU/CPU_CORE/CPU_CORE_SPEC.md`](RTL/CPU/CPU_CORE/CPU_CORE_SPEC.md) | CPU core (instruction set, pipeline, MMU, CSRs, debug, decisions 1 to 78) |
 | [`RTL/CPU/CPU_CACHE/CPU_CACHE_SPEC.md`](RTL/CPU/CPU_CACHE/CPU_CACHE_SPEC.md) | L1 caches (parameters, interfaces, behavior, verification results) |
 | [`RTL/CPU/CPU_L2/CPU_L2_SPEC.md`](RTL/CPU/CPU_L2/CPU_L2_SPEC.md) | L2 cache (design, behavior, resources, verification, effect on the board) |
 | [`RTL/CPU/CPU_DBG/CPU_DBG_SPEC.md`](RTL/CPU/CPU_DBG/CPU_DBG_SPEC.md) | Debug logic (JTAG/cJTAG DTM, DM, authentication) |
@@ -73,7 +74,7 @@ Every document has a Japanese version next to it (`XXXX.md` is English, `XXXX_J.
 | [`LitexSystem/docs/ROADMAP.md`](LitexSystem/docs/ROADMAP.md) | Next design themes |
 | [`LitexSystem/software/boot/README.md`](LitexSystem/software/boot/README.md) | Making the SD card, Ethernet, TFTP netboot, stress test, distributed binaries |
 | [`LitexSystem/software/bench/README.md`](LitexSystem/software/bench/README.md) | Benchmarks on the board and `perf` |
-| [`SIM/SIM_CORE/README.md`](SIM/SIM_CORE/README.md) | Verification environment of the core (33 home-made tests, riscv-tests, bug injection) |
+| [`SIM/SIM_CORE/README.md`](SIM/SIM_CORE/README.md) | Verification environment of the core (34 home-made tests, riscv-tests, bug injection) |
 
 ## Directory layout
 
@@ -89,10 +90,10 @@ RTL/
 │   │   ├── CORE_DEC/       instruction decoder
 │   │   ├── CORE_DECOMP/    expands compressed (C) instructions to 32 bits
 │   │   ├── CORE_CSR/       CSRs and trap state (M / S / U, debug, triggers, performance counters)
-│   │   ├── CORE_MDU/       multiply / divide (M)
+│   │   ├── CORE_MDU/       multiply / divide (M), carry-less multiply (Zbc)
 │   │   ├── CORE_FRF/       floating point register file (32×64, 3R2W)
 │   │   ├── CORE_RF/        integer register file (32×64bit, 2R2W)
-│   │   ├── CORE_EXU/       ALU (including Zba / Zbb / Zicond), branch conditions, address generation
+│   │   ├── CORE_EXU/       ALU (including Zba / Zbb / Zbs / Zicond), branch conditions, address generation
 │   │   └── CORE_LSU/       load / store unit (early issue from EX, data cache port)
 │   ├── CPU_MMU/        Sv39 MMU and PMP
 │   │   ├── CORE_MMU/       ITLB / DTLB / walker / PMP together
@@ -157,13 +158,13 @@ official tests, down to confirming that the tests find deliberately broken RTL (
 
 | Command | Contents | Result |
 |---|---|---|
-| `cd SIM/SIM_CORE && make` | 33 home-made tests of the CPU core (instructions, traps, MMU, PMP, debug, branch prediction, triggers, performance counters and more) | All PASS |
+| `cd SIM/SIM_CORE && make` | 34 home-made tests of the CPU core (instructions, traps, MMU, PMP, debug, branch prediction, triggers, performance counters and more) | All PASS |
 | `cd SIM/SIM_CORE && make stress` | The same tests with back pressure on both cache ports | All PASS |
 | `cd SIM/SIM_CORE && make riscv-tests` | The official riscv-tests (rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzbs / uzbc / uzicond / mi / si) | 178 PASS, 4 known failures (tests that need unimplemented features) |
 | `cd SIM/SIM_CORE && make riscv-tests-v` | The same tests in the virtual memory (Sv39) environment | 154 PASS, 4 known failures |
 | `cd SIM/SIM_CORE && make mdu / clint / plic` | Multiply / divide (reference model, 200,000 operations), CLINT (4 harts), PLIC | PASS |
 | `cd SIM/SIM_CORE && ./bug_inject.sh` | 339 bug injections (with and without back pressure) | All detected |
-| `cd SIM/SIM_SYS && make` | Core + real L1 / L2 caches + AXI + DMA port (26 home-made tests, 4 programs for DMA, PMU and others). `PARAMS=-GL2_SIZE=0` for no L2 | All PASS (with / without L2) |
+| `cd SIM/SIM_SYS && make` | Core + real L1 / L2 caches + AXI + DMA port (27 home-made tests, 4 programs for DMA, PMU and others). `PARAMS=-GL2_SIZE=0` for no L2 | All PASS (with / without L2) |
 | `cd SIM/SIM_SYS && make riscv-tests` | riscv-tests through the real caches | 133 PASS, 4 known failures |
 | `cd SIM/SIM_SYS && ./bug_inject.sh` | 23 bug injections (including the cycle bounds of the floating point kernels, `bench/fploop`, and the memory wait events of M0) | All detected |
 | `cd SIM/SIM_CACHE && make` | All tests of the L1 caches (CPU and DMA port random on the same lines at the same time, cancel included) | PASS 64,914 checks |
@@ -223,12 +224,12 @@ The bitstream and reports go to `output/`. The OpenOCD configuration is in `open
 |---|---|
 | JTAG / cJTAG debug logic | Done. Connected to the core: halt / step / registers / memory / breakpoints on the board |
 | L1 instruction / data caches | Done (sweeps, bug injection, up to concurrent random tests of CPU and DMA). With a DMA port |
-| CPU core | RV64GC + Zba / Zbb / Zicond, M / S / U, 8-stage pipeline, branch prediction (gshare) |
+| CPU core | RV64GC + Zba / Zbb / Zbs / Zbc / Zicond / Zicboz, M / S / U, 8-stage pipeline, branch prediction (gshare) |
 | MMU (Sv39) and PMP | Done |
 | Linux on the LiteX SoC | On the board from the SD card's ext4 to BusyBox. Ethernet, TFTP netboot. 120-minute stress test PASS |
 | Performance | 2.786 CoreMark/MHz, 1.496 DMIPS/MHz (board, under Linux, `-O2`; 3.025 / 1.542 with the most optimization). The breakdown on the board can be measured with the performance counters and `perf` |
 | L2 cache | Done (256 KB, [`CPU_L2_SPEC.md`](RTL/CPU/CPU_L2/CPU_L2_SPEC.md)). Kernel loads 1.2 to 1.7 times faster on the board |
-| Next themes | A second-level TLB (user-mode loads), timing work before pipelining the FPU ([`ROADMAP.md`](LitexSystem/docs/ROADMAP.md)) |
+| Next themes | A second-level TLB (user-mode loads), whole-line writes without the read and posted uncached stores (the kernel's copies and drivers) ([`ROADMAP.md`](LitexSystem/docs/ROADMAP.md)) |
 
 ## License
 

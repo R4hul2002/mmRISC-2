@@ -42,7 +42,7 @@
 # With "profile" as the second argument it counts nothing but samples each
 # load once with perf record (r1 every 100000 cycles) and lists its first
 # functions, then the share of the CRC and checksum functions in each load
-# (whether Zbc, ROADMAP.md F3, is worth it). Needs perf with libelf (D2).
+# (it judged Zbc, ROADMAP.md F3: BENCH.md 24 and 25). Needs perf with libelf (D2).
 #
 # Needs the PMU (bitstream, fw_jump.bin, Image with perf; perf.sh works).
 # About 14 minutes (profile: about 4).

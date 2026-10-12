@@ -3,8 +3,8 @@
 [日本語](CPU_CORE_SPEC_J.md)
 
 - Version: Rev-1 (2026-09-20), first edition (design plan)
-- Last updated: 2026-10-06 (updated as the implementation goes; decisions in section 13, the latest is
-  decision 69)
+- Last updated: 2026-10-12 (updated as the implementation goes; decisions in section 13, the latest is
+  decision 78)
 - Scope: `RTL/CPU/CPU_CORE/` (pipeline, CSRs, MMU), `RTL/CPU/CPU_TOP/` (integration)
 - Related: `RTL/CPU/CPU_CACHE/CPU_CACHE_SPEC.md` (L1 caches), `RTL/CPU/CPU_DBG/CPU_DBG_SPEC.md` (debug
   logic)
@@ -1158,7 +1158,7 @@ Not done (needed at integration):
 
 | Extension | Implementation |
 |---|---|
-| M | `CORE_MDU`. Sits beside EX, and EX waits. Multiplies: MUL / MULW wait 1 cycle and the MULH family 2 (decision 61; originally 3). Divides do 1 bit a cycle, skipping in one cycle the leading steps where the quotient is known to be 0 (decision 62; originally always 32 or 64 cycles) |
+| M | `CORE_MDU`. Sits beside EX, and EX waits. Multiplies: MUL / MULW wait 1 cycle and the MULH family 2 (decision 61; originally 3). Divides do 1 bit a cycle, skipping in one cycle the leading steps where the quotient is known to be 0 (decision 62; originally always 32 or 64 cycles). Since decision 77 it also does Zbc's carry-less multiply, 16 bits a cycle (EX waits 4) |
 | A | The decoder only maps `mem_cmd` to the cache's commands. Read-modify-write and the reservation are on the cache side (already implemented) |
 | C | `CORE_DECOMP` (16-bit → 32-bit) and rebuilding `CORE_IFU` around parcels |
 

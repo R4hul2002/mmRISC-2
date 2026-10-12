@@ -1140,3 +1140,38 @@ cycles). BusyBox is stripped, so the user-mode loads (`gunzip`, `awk`, `md5sum`'
   `memcpy` 4.6 % of `forkexec`), where every line of the destination is read from the L2 or memory first and
   then overwritten, and the uncached writes of the drivers (`liteeth_start_xmit` 10 % of `tftp`), each of which
   waits for the answer of the peripheral bus.
+
+## 25. Zbc and Zbs (F3, F1, T7, 2026-10-12, board)
+
+`workload.sh` and `workload.sh profile` on the bitstream of TIMING 44: Zbc (`clmul` in the MDU, an answer in 5
+cycles), Zbs and T7 (no cycle changed), with a new `fw_jump.bin` whose device tree names `zbc` and `zbs`.
+Against 23:
+
+| Load | CPI | Change | Note |
+|---|---|---|---|
+| `gunzip` | 1.245 → 1.245 | 0 | |
+| `md5sum` | 1.133 → 1.131 | −0.2 % | |
+| `awk` | 1.545 → 1.598 | (*) | |
+| `ls -lR` | 2.009 → 2.046 | +1.8 % (**) | the instructions about −5 %, the cycles about −3 % |
+| `ext4read` | 2.370 → 2.361 | −0.4 % | |
+| `sdread` | 2.657 → 2.646 | −0.4 % | |
+| `forkexec` | 2.042 → 2.040 | −0.1 % | |
+| `tftp` | 2.701 → 2.688 | −0.5 % | DTLB walks 12.8 → 10.0 per 1000 instructions (the swing of 23) |
+
+- (**) **`ls -lR` does the same work with fewer instructions**: the kernel computes `crc32c` with `clmul`
+  (`crc32_lsb_clmul`) instead of a table, so its CPI is not the measure. Everything that is counted per 1000
+  instructions and does not depend on the CRC went up by about 5 %: the exceptions (system calls and page
+  faults, the same in every run) 0.115 → 0.121, the ITLB walks 3.51 → 3.68, the I$ fills 31.3 → 33.3. So the
+  instructions went down by about 5 % and the cycles by about 3 % (×1.018 / 1.05), the kernel's share 58.7 →
+  57.4 %. (`Mcyc` is rounded: 15 in both; the raw counts are in `/tmp/workload.log`.) The MDU's waits went 0.4 →
+  0.8 % of the cycles, `clmul` being 5 cycles.
+- **The profile agrees**: the CRCs of `ls` are 5.5 → 3.9 % of its samples (`crc32_lsb_clmul` 2.4 %, the
+  `crc32c` wrapper 0.5 %, `ext4_inode_csum(_set)` 1.0 %), those of `forkexec` 0.4 → 0.2 %. `ls` has about 200
+  samples (0.49 % each), so these are rough.
+- (*) `awk` takes one of its two values (1.545 / 1.598 since 21.2, DTLB walks 13.5 / 14.0 per 1000 instructions
+  by where its pages land). The other loads have no CRC, and stay where they were.
+- Zbs: the kernel's configuration does not use it yet (nothing in the profile). It completes the B extension
+  for programs built with `-march=rv64gc_zba_zbb_zbs`.
+- **What is left by function** (`profile`): the copy to user space (`fallback_scalar_usercopy_sum_enabled`)
+  21.1 % of `sdread`, 6.6 % of `md5sum`, 3.6 % of `tftp`; `liteeth_start_xmit` 10.7 % of `tftp`; `memcpy` 4.2 % of
+  `forkexec`. These are the next themes (W1 and W2 of `ROADMAP.md`).
