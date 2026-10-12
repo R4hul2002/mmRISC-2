@@ -10,10 +10,12 @@
 # CONFIG_PERF_EVENTS / CONFIG_RISCV_PMU_SBI (software/boot/linux.config)
 # and the pmu node of the device tree (CPU_CORE_SPEC.md decision 69).
 #
-# Built without the optional libraries (no libelf, libtraceevent, python,
-# ...): perf stat and perf record / report work; symbols of a program are
-# not resolved (perf report --sort dso still says which binary), and the
-# tracepoint events are not there.
+# Built without most optional libraries (no libtraceevent, libdw, python,
+# ...). With libelf (scripts/build_perf_libs.sh puts it with zlib into
+# $LIBS, ROADMAP.md D2) perf report resolves the symbols of the programs it
+# samples and of the kernel (from /proc/kallsyms) and sorts by function;
+# without it only the binary is known (--sort dso). No DWARF unwinding, no
+# source lines, no tracepoint events.
 #---------------------------------------------------------------------------
 set -e
 
@@ -23,18 +25,27 @@ REPO=$(dirname "$LITEX_SYSTEM")
 
 LINUX=${1:-$REPO/LitexRocket/software/linux}
 OUT=${OUT:-$HOME/mmlitex_build/perf_build}
+LIBS=${LIBS:-$HOME/mmlitex_build/perf_libs}
 
 [ -d "$LINUX/tools/perf" ] || { echo "no kernel source at $LINUX"; exit 1; }
 export PATH=/opt/riscv/bin:$PATH
 mkdir -p "$OUT"
 
+if [ -f "$LIBS/lib/libelf.a" ] && [ -f "$LIBS/lib/libz.a" ]; then
+    echo "perf with libelf from $LIBS"
+    ELF_ARGS=(EXTRA_CFLAGS="-I$LIBS/include" LDFLAGS="-static -L$LIBS/lib")
+else
+    echo "perf without libelf (run scripts/build_perf_libs.sh for symbols)"
+    ELF_ARGS=(LDFLAGS=-static NO_LIBELF=1)
+fi
+
 make -C "$LINUX/tools/perf" O="$OUT" ARCH=riscv \
-    CROSS_COMPILE=riscv64-unknown-linux-gnu- LDFLAGS=-static \
-    NO_LIBELF=1 NO_LIBTRACEEVENT=1 NO_JEVENTS=1 NO_LIBPYTHON=1 NO_LIBPERL=1 \
+    CROSS_COMPILE=riscv64-unknown-linux-gnu- "${ELF_ARGS[@]}" \
+    NO_LIBTRACEEVENT=1 NO_JEVENTS=1 NO_LIBPYTHON=1 NO_LIBPERL=1 \
     NO_SLANG=1 NO_GTK2=1 NO_LIBUNWIND=1 NO_LIBDW=1 NO_LIBBPF=1 NO_BPF_SKEL=1 \
     NO_LIBCAP=1 NO_LIBNUMA=1 NO_LIBZSTD=1 NO_LZMA=1 NO_LIBCRYPTO=1 \
     NO_LIBBABELTRACE=1 NO_LIBDEBUGINFOD=1 NO_CAPSTONE=1 NO_LIBLLVM=1 \
-    NO_DEMANGLE=1 NO_SHELLCHECK=1 -j"$(nproc)"
+    NO_DEMANGLE=1 NO_SHELLCHECK=1 NO_JVMTI=1 -j"$(nproc)"
 
 riscv64-unknown-linux-gnu-strip -o "$OUT/perf.stripped" "$OUT/perf"
 mkdir -p "$LITEX_SYSTEM/software/bench/out"

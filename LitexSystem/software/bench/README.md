@@ -15,7 +15,7 @@ analysis: `../../docs/BENCH.md`.
 | `fpkern.S` / `fpkern.c` / `fpkern.h` | Assembler kernels for the pipelined FPU (`CPU_CORE_SPEC.md` 10.11): matrix multiply (4×4 blocks, as it is and cut to fit the D$ (`fpkern.c`, section 16 of `../../docs/BENCH.md`)), 8-tap FIR, dot product. `fpkern.h` has C versions of the same sums (to check the answers). In simulation `SIM/SIM_SYS/bench/fploop.c` runs the same kernels |
 | `dhry_shim.c` | What the Dhrystone of riscv-tests expects from its bare environment (timer, printing), under Linux |
 | `workload.sh` | Run on the board. Counts loads other than CoreMark (gunzip, md5sum, awk, ls, reading ext4 and the SD card, fork + exec, TFTP) with the PMU, one row per load ("workload.sh" below) |
-| `perf.sh` | Run on the board. Fetches `perf` and CoreMark by TFTP and counts where CoreMark's cycles go with the performance counters (`CPU_CORE_SPEC.md` decision 69) ("perf" below) |
+| `perf.sh` | Run on the board. Fetches `perf` and CoreMark by TFTP and counts where CoreMark's cycles go with the performance counters (`CPU_CORE_SPEC.md` decision 69), and reports by function where CoreMark and a fork / exec loop spend them ("perf" below) |
 
 The compiler is `/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc` (**GCC 13.2.0**, glibc 2.40), the options
 **`-march=rv64imafdc -mabi=lp64d -O2 -static`** (`-march=rv64imafdc_zba_zbb` for `*_zb`). `-mtune` is the
@@ -84,9 +84,13 @@ read with Linux's `perf`. What is needed:
 - A kernel with `CONFIG_PERF_EVENTS` / `CONFIG_RISCV_PMU_SBI` (`../boot/Image`, configuration in
   `../boot/linux.config`)
 - `perf` itself: `../../scripts/build_perf.sh` builds it statically from `tools/perf` of the kernel
-  source and puts it in `out/perf` (`make tftp` sends that to the TFTP server too)
+  source and puts it in `out/perf` (`make tftp` sends that to the TFTP server too). With libelf
+  (`../../scripts/build_perf_libs.sh` builds zlib and libelf of elfutils statically, once; `build_perf.sh`
+  uses them when they are there, ROADMAP.md D2) `perf report --sort sym` gives function names, of
+  CoreMark and of the kernel; `perf.sh` ends with such a report of CoreMark and of a fork / exec loop
 
 ```bash
+../../scripts/build_perf_libs.sh
 ../../scripts/build_perf.sh
 make tftp
 ```

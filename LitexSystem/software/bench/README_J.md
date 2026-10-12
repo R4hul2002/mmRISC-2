@@ -15,7 +15,7 @@ CoreMark・Dhrystone・小さな測定(`micro`)を、静的リンクの Linux �
 | `fpkern.S` / `fpkern.c` / `fpkern.h` | パイプライン化した FPU(`CPU_CORE_SPEC.md` 10.11)向けのアセンブラの核: 行列積(4×4 のブロック、そのままと D$ に合わせて切ったもの(`fpkern.c`、`../../docs/BENCH.md` 16 章))、FIR 8 タップ、内積。`fpkern.h` に同じ計算の C 版(答えの照合用)。シミュレーションでは `SIM/SIM_SYS/bench/fploop.c` が同じ核を走らせる |
 | `dhry_shim.c` | riscv-tests の Dhrystone が裸の環境に求めるもの(タイマ、表示)を Linux で |
 | `workload.sh` | ボードで実行。CoreMark の外の負荷(gunzip、md5sum、awk、ls、ext4 と SD の読み出し、fork + exec、TFTP)を PMU で数え、1 行 1 負荷の表にする(下の「workload.sh」) |
-| `perf.sh` | ボードで実行。`perf` と CoreMark を TFTP で取ってきて、性能カウンタ(`CPU_CORE_SPEC.md` 決定 69)で CoreMark のサイクルの行き先を数える(下の「perf」) |
+| `perf.sh` | ボードで実行。`perf` と CoreMark を TFTP で取ってきて、性能カウンタ(`CPU_CORE_SPEC.md` 決定 69)で CoreMark のサイクルの行き先を数え、CoreMark と fork / exec のループがどの関数でサイクルを使うかを出す(下の「perf」) |
 
 コンパイラは `/opt/riscv/bin/riscv64-unknown-linux-gnu-gcc`(**GCC 13.2.0**、glibc 2.40)、
 オプションは **`-march=rv64imafdc -mabi=lp64d -O2 -static`**(`*_zb` は `-march=rv64imafdc_zba_zbb`)。
@@ -84,9 +84,13 @@ Linux の `perf` で読む。要るもの:
 - `CONFIG_PERF_EVENTS` / `CONFIG_RISCV_PMU_SBI` 入りのカーネル(`../boot/Image`、
   設定は `../boot/linux.config`)
 - `perf` 本体: `../../scripts/build_perf.sh` がカーネルのソースの `tools/perf` から
-  静的リンクで作り、`out/perf` に置く(`make tftp` がそれも TFTP サーバへ送る)
+  静的リンクで作り、`out/perf` に置く(`make tftp` がそれも TFTP サーバへ送る)。libelf があると
+  (`../../scripts/build_perf_libs.sh` が zlib と elfutils の libelf を一度だけ静的に作る。`build_perf.sh` は
+  それがあれば使う。ROADMAP_J.md の D2)`perf report --sort sym` が CoreMark とカーネルの関数名を出す。
+  `perf.sh` の最後に CoreMark と fork / exec のループのその集計がある
 
 ```bash
+../../scripts/build_perf_libs.sh
 ../../scripts/build_perf.sh
 make tftp
 ```

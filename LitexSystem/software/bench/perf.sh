@@ -7,8 +7,10 @@
 # Fetches perf (scripts/build_perf.sh) and CoreMark from the TFTP server
 # into /tmp/bench and runs CoreMark four times under perf stat, four events
 # of the core at a time (there are four counters, hpmcounter3-6; cycles and
-# instructions have counters of their own), then once under perf record.
-# Each run takes CoreMark's 10 s or more. The log is /tmp/perf.log.
+# instructions have counters of their own), then once under perf record,
+# reported by binary and by function; last a fork and exec loop under perf
+# record, by function (the kernel's). Each CoreMark run takes 10 s or more.
+# The log is /tmp/perf.log.
 #
 # rN is event N of the core (CPU_CORE_SPEC.md decision 69, also listed in
 # the pmu node of the device tree). Needs the kernel with perf
@@ -75,3 +77,16 @@ echo "" | tee -a "$LOG"
 echo "=== $B under perf record (r1 every 1000000 cycles, overflow interrupt)" | tee -a "$LOG"
 ./perf record -e r1 -c 1000000 -o perf.data ./$B > $B.out 2>&1
 ./perf report -i perf.data --stdio --sort dso 2>&1 | grep -v "^$\|^#$\|tips.txt" | tee -a "$LOG"
+
+# By function (perf built with libelf, scripts/build_perf_libs.sh; ROADMAP.md
+# D2). CoreMark's own functions, then the kernel's under a load that is
+# mostly kernel: fork and exec of a small program (the forkexec load of
+# workload.sh), where the zeroing of new pages (clear_page) shows up.
+echo "" | tee -a "$LOG"
+echo "=== $B by function" | tee -a "$LOG"
+./perf report -i perf.data --stdio --sort dso,sym 2>&1 | grep -v "^$\|^#$\|tips.txt" | head -24 | tee -a "$LOG"
+echo "" | tee -a "$LOG"
+echo "=== fork + exec x 100 (busybox uname) by function (r1 every 100000 cycles)" | tee -a "$LOG"
+./perf record -e r1 -c 100000 -o perf_fe.data \
+    sh -c 'i=0; while [ $i -lt 100 ]; do /bin/busybox uname > /dev/null; i=$((i+1)); done' > /dev/null 2>&1
+./perf report -i perf_fe.data --stdio --sort dso,sym 2>&1 | grep -v "^$\|^#$\|tips.txt" | head -40 | tee -a "$LOG"
