@@ -1141,7 +1141,7 @@ cycles). BusyBox is stripped, so the user-mode loads (`gunzip`, `awk`, `md5sum`'
   then overwritten, and the uncached writes of the drivers (`liteeth_start_xmit` 10 % of `tftp`), each of which
   waits for the answer of the peripheral bus.
 
-## 25. Zbc and Zbs (F3, F1, T7, 2026-10-12, board)
+## 25. Zbc and Zbs (F3, F1, T7, 2026-10-12, board, Rev.01)
 
 `workload.sh` and `workload.sh profile` on the bitstream of TIMING 44: Zbc (`clmul` in the MDU, an answer in 5
 cycles), Zbs and T7 (no cycle changed), with a new `fw_jump.bin` whose device tree names `zbc` and `zbs`.

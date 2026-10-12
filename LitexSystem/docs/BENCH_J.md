@@ -1104,7 +1104,7 @@ libelf つきの `perf`(D2)。22.1 章との比較:
   `forkexec` の `memcpy` 4.6 %)では、コピー先のラインがどれもまず L2 かメモリから読まれてから上書きされる。
   ドライバのキャッシュ無しの書き込み(`tftp` の `liteeth_start_xmit` 10 %)では、1 回ずつ周辺バスの答えを待つ。
 
-## 25. Zbc と Zbs(F3、F1、T7、2026-10-12、実機)
+## 25. Zbc と Zbs(F3、F1、T7、2026-10-12、実機、Rev.01)
 
 TIMING 44 のビットストリームで `workload.sh` と `workload.sh profile`: Zbc(MDU の `clmul`、5 サイクルで答え)、
 Zbs、T7(サイクルは変わらない)。新しい `fw_jump.bin` のデバイスツリーが `zbc` と `zbs` を名乗る。23 章との比較:

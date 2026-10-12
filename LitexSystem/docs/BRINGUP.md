@@ -2,7 +2,7 @@
 
 [日本語](BRINGUP_J.md)
 
-Last updated: 2026-09-25
+Last updated: 2026-10-12 (round 18: Rev.01)
 
 ## What has been confirmed so far
 
@@ -14,12 +14,13 @@ board yet** are different things.
 | Generating the SoC (RTL + BIOS) | **Works**. `scripts/build_soc.sh` |
 | Memory map matches the Rocket configuration | **Confirmed** (csr.json compared) |
 | Interrupt numbers match the Rocket configuration | **Confirmed** (`*_interrupt_read` of soc.h) |
-| Core + real caches + AXI | **Confirmed**. `SIM/SIM_SYS`, 15 home-made tests + 132 riscv-tests |
+| Core + real caches + AXI | **Confirmed**. `SIM/SIM_SYS`, 27 home-made tests + 133 riscv-tests (15 + 132 at the first boot) |
 | **Instruction fetch from outside the cache** | **Confirmed**. `make romboot` (below) |
 | **The LiteX BIOS itself (with interrupts)** | **Confirmed**. `SIM/SIM_BIOS` (2026-09-24, added after the board stopped) |
 | Bitstream | **Works**. Timing closes at 50 MHz (`TIMING.md`) |
 | Does the BIOS come up on the board | **Confirmed** (2026-09-24) |
-| Does Linux boot on the board | **Confirmed** (2026-09-25, WNS 0.013 ns; with Ethernet 2026-09-26, WNS 0.131 ns, up to DHCP, ping and TFTP netboot). From the SD card's ext4 to the BusyBox prompt. `cat /proc/cpuinfo` and `uname -a` work. Open: one WARNING of `kernel/bpf/memalloc.c:186` during boot (below) |
+| Does Linux boot on the board | **Confirmed** (2026-09-25, WNS 0.013 ns; with Ethernet 2026-09-26, WNS 0.131 ns, up to DHCP, ping and TFTP netboot; **Rev.01** 2026-10-12, WNS +0.664 ns). From the SD card's ext4 to the BusyBox prompt. `cat /proc/cpuinfo` and `uname -a` work. The WARNING of `kernel/bpf/memalloc.c:186` at the first boot was two D$ bugs, fixed in round 7 |
+| Long stress test (`stress.sh`, 120 minutes) | **PASS** four times: rounds 14, 16, 17 and 18 (Rev.01) |
 
 ## Why uncached fetch was dealt with first
 
@@ -595,3 +596,28 @@ through the kernel a lot (checking files, TFTP, SD reads and writes), and the ef
 15 of `BENCH.md`) shows directly in the counts. The L2 is write-back and both DMA (SD, Ethernet) and CPU
 writes go through it, but 2 hours of checking found no mismatch.
 
+
+## Round 18: long stress test of Rev.01 (2026-10-12)
+
+The bitstream of section 44 of `TIMING.md` (WNS +0.664 ns), tagged **Rev.01**. Since round 17 the D$ changed a
+great deal: store misses answered when taken (M1), the fill asked for before the dirty victim is copied (M5),
+`cbo.zero` that makes a line of zeros without reading memory (F2), and the bus grant in the cycle of the request
+(`FAST_READ`). There were also T1 to T7 in the core, and Zbs / Zbc. `fw_jump.bin` was the one whose device tree
+names `zicboz`, `zbc` and `zbs` (md5 `00dd1f65...`), so Linux zeroes its pages with `cbo.zero` and computes
+`crc32c` with `clmul` throughout the run.
+
+```
+=== stress result (iterations, ok, ng) ===
+mem 81 81 0
+net 41 41 0
+sd  517 517 0
+=== new kernel messages that look like trouble ===
+(none)
+=== PASS ===
+```
+
+The load average stayed around 3 and nothing went NG. In the same 120 minutes it did more rounds than round 17
+(77 / 37 / 503): mem +5 %, net +11 %, sd +3 %, in line with what `workload.sh` showed for the kernel loads
+(sections 18 to 25 of `BENCH.md`). The new write paths of the D$ (stores joining an outstanding fill, zero fills,
+DMA writes through lines being filled) were all exercised by the DMA of the SD card and Ethernet against the CPU
+for 2 hours without a mismatch.

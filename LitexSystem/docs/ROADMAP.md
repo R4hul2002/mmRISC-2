@@ -8,6 +8,9 @@ documents they point to; earlier versions of this document are in the git histor
 what is left, ranked again by what the board's loads spend their cycles on, function by function (sections 24
 and 25 of `BENCH.md`).
 
+This is the state of **Rev.01** (the tag on `main`, 2026-10-12). The themes of section 3 are developed in the
+`dev` branch.
+
 ## 1. Where things are
 
 On the board (Arty A7-100T, 50 MHz, Linux 7.2):
@@ -40,7 +43,7 @@ left is in the TLB and in the writes that the copies and the drivers make.
 
 | # | Theme | Result | Document |
 |---|---|---|---|
-| A1 / H1 | Long stress tests | 120 minutes three times (after A1, H1 and E1), all OK | Rounds 14, 16 and 17 of `BRINGUP.md` |
+| A1 / H1 | Long stress tests | 120 minutes four times (after A1, H1, E1 and on Rev.01), all OK | Rounds 14, 16, 17 and 18 of `BRINGUP.md` |
 | A2 | Timing of the SD card inputs | Already taken in the I/O block's `IDDR` (no change) | Round 13 of `BRINGUP.md` |
 | A3 | `fence` | Doing nothing is enough for a single hart; tests added | `CPU_CORE_SPEC.md` 5.3 |
 | B1 | Zba / Zbb | CoreMark +11.6 %, Linux's string functions switch to the Zbb versions | Decision 65 of `CPU_CORE_SPEC.md` |
@@ -140,8 +143,7 @@ takes the margin away.
 
 ## 4. Recommended order
 
-0. **A 120-minute `stress.sh` on the current bitstream** (A1 / H1 again): the last one ran on the version of
-   2026-10-09, and the D$ has changed much since (M1, M5, F2, `FAST_READ`).
+0. ~~A 120-minute `stress.sh` on the current bitstream~~: **done, PASS** (round 18 of `BRINGUP.md`, Rev.01).
 1. **E3a, then E3b** (the second-level TLB): the largest measured loss of the user-mode loads (10 to 13 %),
    and a few % of the kernel loads. E3a decides the size.
 2. **W1** (write-validate), after checking where the copy's samples fall: the copy to user space is the largest

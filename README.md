@@ -18,11 +18,11 @@ peripherals come from LiteX. The CPU has:
 - JTAG / cJTAG on-chip debug (Debug Spec 1.0, 4 hardware triggers)
 - Performance counters (Zihpm, Sscofpmf, Smcntrpmf; usable with Linux's `perf`, down to function names)
 
-## Status (2026-10-12)
+## Status (Rev.01, 2026-10-12)
 
 On the Arty A7-100T board (50 MHz), LiteX BIOS → OpenSBI → **Linux 7.2** boots from the ext4 of the SD
 card to the BusyBox shell, and Ethernet (DHCP, TFTP) works. The 120-minute stress test (memory, Ethernet
-and SD card checked at the same time) passes with the L2 cache as well (on the version of 2026-10-09).
+and SD card checked at the same time) passes on Rev.01 (round 18 of `LitexSystem/docs/BRINGUP.md`).
 
 | | |
 |---|---|
@@ -54,6 +54,15 @@ The story of the bring-up is in [`LitexSystem/docs/BRINGUP.md`](LitexSystem/docs
 performance work and the breakdown on the board in
 [`LitexSystem/docs/BENCH.md`](LitexSystem/docs/BENCH.md), the next themes in
 [`LitexSystem/docs/ROADMAP.md`](LitexSystem/docs/ROADMAP.md).
+
+## Revisions and branches
+
+| Revision | Date | Contents |
+|---|---|---|
+| **Rev.01** (tag `Rev.01`) | 2026-10-12 | The version this README describes: RV64GC + Zba / Zbb / Zbs / Zbc / Zicond / Zicboz, L1 and L2 caches, Linux 7.2 on the Arty A7-100T at 50 MHz (WNS +0.664 ns), the 120-minute stress test PASS |
+
+`main` holds the latest revision for readers outside and stays there until the next major revision. Development
+goes on in the `dev` branch (next themes: [`LitexSystem/docs/ROADMAP.md`](LitexSystem/docs/ROADMAP.md)).
 
 ## Documents
 

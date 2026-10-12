@@ -1735,7 +1735,7 @@ T6 (the DTLB's fault taken into a flip-flop and raised in MR, decision 75 of `CP
   waits (they are only used once it stops waiting) would take the compare off the CE (candidate T7). Nothing of
   Zicboz is near the top.
 
-## 44. Zbc, Zbs, T7: +0.664 ns (2026-10-12)
+## 44. Zbc, Zbs, T7: +0.664 ns (2026-10-12, Rev.01)
 
 Zbc (`clmul` / `clmulh` / `clmulr` in the MDU, 16 bits a cycle, decision 77 of `CPU_CORE_SPEC.md`), Zbs (in the
 ALU, decision 77) and T7 (while MR waits for the DTLB it takes `d_tr_paddr` and the fault in every cycle,

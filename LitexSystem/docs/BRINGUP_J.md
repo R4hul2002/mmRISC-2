@@ -2,7 +2,7 @@
 
 [English](BRINGUP.md)
 
-最終更新: 2026-09-25
+最終更新: 2026-10-12(18 回目: Rev.01)
 
 ## 今どこまで確認できているか
 
@@ -14,12 +14,13 @@
 | SoC の生成(RTL + BIOS) | **通る**。`scripts/build_soc.sh` |
 | メモリマップが Rocket 構成と一致 | **確認済**(csr.json を突き合わせ) |
 | 割り込み番号が Rocket 構成と一致 | **確認済**(soc.h の `*_interrupt_read`) |
-| コア + 本物のキャッシュ + AXI | **確認済**。`SIM/SIM_SYS`、自作 15 本 + riscv-tests 132 本 |
+| コア + 本物のキャッシュ + AXI | **確認済**。`SIM/SIM_SYS`、自作 27 本 + riscv-tests 133 本(最初の起動のときは 15 本 + 132 本) |
 | **キャッシュ外からの命令フェッチ** | **確認済**。`make romboot`(下記) |
 | **LiteX BIOS そのもの(割り込み込み)** | **確認済**。`SIM/SIM_BIOS`(2026-09-24、実機で止まったのを受けて追加) |
 | ビットストリーム | **通る**。50MHz でタイミング収束(`TIMING.md`) |
 | 実機で BIOS が出るか | **確認済**(2026-09-24) |
-| 実機で Linux が起動するか | **確認済**(2026-09-25、WNS 0.013ns。Ethernet 入りは 2026-09-26、WNS 0.131ns、DHCP・ping・TFTP ネットブートまで)。SD カードの ext4 から BusyBox のプロンプトまで。`cat /proc/cpuinfo`、`uname -a` が動く。未解決: 起動中に 1 度 `kernel/bpf/memalloc.c:186` の WARNING(下記) |
+| 実機で Linux が起動するか | **確認済**(2026-09-25、WNS 0.013ns。Ethernet 入りは 2026-09-26、WNS 0.131ns、DHCP・ping・TFTP ネットブートまで。**Rev.01** は 2026-10-12、WNS +0.664 ns)。SD カードの ext4 から BusyBox のプロンプトまで。`cat /proc/cpuinfo` と `uname -a` も動く。最初の起動で出た `kernel/bpf/memalloc.c:186` の WARNING は D$ の 2 つの不具合で、7 回目で直した |
+| 長時間の負荷試験(`stress.sh`、120 分) | **PASS** 4 回: 14・16・17・18 回目(Rev.01) |
 
 ## キャッシュ外フェッチを先に潰した理由
 
@@ -622,3 +623,26 @@ sd  503 503 0
 回数に出ている。L2 は書き戻しで、DMA(SD・Ethernet)と CPU の両方の書き込みが通るが、2 時間の
 照合で食い違いは出ていない。
 
+
+## 18 回目: Rev.01 の長時間負荷試験(2026-10-12)
+
+`TIMING.md` 44 章のビットストリーム(WNS +0.664 ns)で、**Rev.01** のタグを付けた版。17 回目からの間に D$ は
+大きく変わった: ストアのミスは受けた時点で答える(M1)、汚れた追い出しの写しより先に読み込みを頼む(M5)、
+メモリを読まずにゼロのラインを作る `cbo.zero`(F2)、頼まれたサイクルにバスを渡す(`FAST_READ`)。コアには
+T1〜T7、Zbs / Zbc も入った。`fw_jump.bin` はデバイスツリーが `zicboz`、`zbc`、`zbs` を名乗るもの(md5
+`00dd1f65...`)なので、試験の間ずっと Linux はページを `cbo.zero` でゼロにし、`crc32c` を `clmul` で計算している。
+
+```
+=== stress result (iterations, ok, ng) ===
+mem 81 81 0
+net 41 41 0
+sd  517 517 0
+=== new kernel messages that look like trouble ===
+(none)
+=== PASS ===
+```
+
+ロードアベレージは 3 前後のままで、NG は無し。同じ 120 分で回った回数は 17 回目(77 / 37 / 503)より mem +5 %、
+net +11 %、sd +3 % 多く、`workload.sh` で見たカーネルの負荷の改善(`BENCH.md` 18〜25 章)と合っている。D$ の
+新しい書き込みの経路(読み込み中のラインに合流するストア、ゼロの fill、読み込み中のラインを通る DMA の書き込み)
+は、SD カードと Ethernet の DMA と CPU とで 2 時間使われ、食い違いは出ていない。

@@ -9,11 +9,11 @@ boot Linux on it.
 already booting Linux (not under git; how to build it: "Preparation" below). The job here is to take the software and the way of building the
 SD card established there as they are, and **replace only the CPU**.
 
-## Status (2026-10-12)
+## Status (Rev.01, 2026-10-12)
 
 On the board (50 MHz), LiteX BIOS → OpenSBI → Linux 7.2 boots from the ext4 of the SD card to the
 BusyBox shell, and Ethernet works (DHCP, ping, TFTP netboot from the BIOS). The 120-minute stress test
-(memory, Ethernet and SD card checked at the same time) passes (last run on the version of 2026-10-09).
+(memory, Ethernet and SD card checked at the same time) passes on Rev.01 (round 18 of `docs/BRINGUP.md`).
 
 | | |
 |---|---|

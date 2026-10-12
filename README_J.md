@@ -17,11 +17,11 @@
 - JTAG / cJTAG のオンチップデバッグ(Debug Spec 1.0、ハードウェアトリガ 4 本)
 - 性能カウンタ(Zihpm、Sscofpmf、Smcntrpmf。Linux の `perf` で関数名まで使える)
 
-## 現状(2026-10-12)
+## 現状(Rev.01、2026-10-12)
 
 Arty A7-100T の実機(50 MHz)で、LiteX BIOS → OpenSBI → **Linux 7.2** が SD カードの ext4
 から BusyBox のシェルまで起動し、Ethernet(DHCP、TFTP)も動く。120 分の負荷試験(メモリ・
-Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版でも PASS(2026-10-09 の版)。
+Ethernet・SD カードの同時照合)は Rev.01 でも PASS(`LitexSystem/docs/BRINGUP.md` 18 回目)。
 
 | | |
 |---|---|
@@ -52,6 +52,15 @@ Ethernet・SD カードの同時照合)は、L2 キャッシュを入れた版�
 立ち上げの経緯は [`LitexSystem/docs/BRINGUP.md`](LitexSystem/docs/BRINGUP_J.md)、性能の作業と
 実機の内訳は [`LitexSystem/docs/BENCH.md`](LitexSystem/docs/BENCH_J.md)、次のテーマは
 [`LitexSystem/docs/ROADMAP.md`](LitexSystem/docs/ROADMAP_J.md)。
+
+## 版とブランチ
+
+| 版 | 日付 | 内容 |
+|---|---|---|
+| **Rev.01**(タグ `Rev.01`) | 2026-10-12 | この README が説明している版: RV64GC + Zba / Zbb / Zbs / Zbc / Zicond / Zicboz、L1・L2 キャッシュ、Arty A7-100T の 50 MHz で Linux 7.2(WNS +0.664 ns)、120 分の負荷試験 PASS |
+
+`main` は外部の方が参照する最新の版を保ち、次のメジャーな版まで更新しない。開発は `dev` ブランチで進める(次の
+テーマ: [`LitexSystem/docs/ROADMAP.md`](LitexSystem/docs/ROADMAP_J.md))。
 
 ## 文書
 

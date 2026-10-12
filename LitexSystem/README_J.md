@@ -10,11 +10,11 @@ Linux を起動するための一式。
 ソフトウェア一式と SD カードの作り方をそのまま使い、**CPU だけ差し替える**のが
 ここの仕事。
 
-## 現状(2026-10-12)
+## 現状(Rev.01、2026-10-12)
 
 実機(50 MHz)で LiteX BIOS → OpenSBI → Linux 7.2 が SD カードの ext4 から BusyBox の
 シェルまで起動し、Ethernet(DHCP、ping、BIOS の TFTP ネットブート)も動く。120 分の
-負荷試験(メモリ・Ethernet・SD カードの同時照合)は PASS(最後は 2026-10-09 の版)。
+負荷試験(メモリ・Ethernet・SD カードの同時照合)は Rev.01 でも PASS(`docs/BRINGUP.md` 18 回目)。
 
 | | |
 |---|---|
