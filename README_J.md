@@ -160,7 +160,7 @@ LitexRocket/        Rocket 構成の LiteX 一式(ワークスペース、OpenSB
 | `cd SIM/SIM_CORE && make riscv-tests` | 公式 riscv-tests(rv64ui / um / ua / uc / uf / ud / uzba / uzbb / uzicond / mi / si) | 167 PASS、既知の不合格 4(未実装機能を要求する試験) |
 | `cd SIM/SIM_CORE && make riscv-tests-v` | 同じ試験を仮想記憶(Sv39)の環境で | 143 PASS、既知の不合格 4 |
 | `cd SIM/SIM_CORE && make mdu / clint / plic` | 乗除算器(参照モデル 20 万演算)、CLINT(4 ハート)、PLIC | PASS |
-| `cd SIM/SIM_CORE && ./bug_inject.sh` | バグ注入 324 種(背圧あり/なしの両方) | 全て検出 |
+| `cd SIM/SIM_CORE && ./bug_inject.sh` | バグ注入 325 種(背圧あり/なしの両方) | 全て検出 |
 | `cd SIM/SIM_SYS && make` | コア + 本物の L1 / L2 キャッシュ + AXI + DMA ポート(自作試験 25 本、DMA・PMU などのプログラム 4 本)。`PARAMS=-GL2_SIZE=0` で L2 なし | 全 PASS(L2 あり / なし) |
 | `cd SIM/SIM_SYS && make riscv-tests` | riscv-tests を本物のキャッシュ越しに | 133 PASS、既知の不合格 4 |
 | `cd SIM/SIM_SYS && ./bug_inject.sh` | バグ注入 23 種(浮動小数点の核のサイクルの上限 `bench/fploop` と M0 のメモリの待ちのイベントを含む) | 全て検出 |

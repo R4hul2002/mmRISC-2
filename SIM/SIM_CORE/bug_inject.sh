@@ -52,6 +52,9 @@
 #   - the select from MR forwarding the address of a load: EX waits for
 #     that load (lu_hazard) and takes nothing from MR in the meantime that
 #     it keeps
+#   - 232, the address of a load or store taken into EX's mtval: since T6
+#     (2026-10-12) a fault of the translation is raised in MR, which gives
+#     its own address (mr_vaddr) as for the PMP, and the line is gone
 #   - 247, EX asking again while it waits for the walker (ex_e_blocked):
 #     since T2 (2026-10-11) a DTLB miss does not hold EX, a load or a store
 #     that asks always leaves EX, and ex_e_blocked is gone
@@ -263,10 +266,12 @@ MUTATIONS=(
 "362#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/~flush \& ~mr_tlb_wait \&/~flush \&/#core (T2): the request from EX goes although its address missed in the DTLB"
 "363#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/(mr_tlb_wait ? mr_vaddr    : mem_addr)/(mem_addr)/#core (T2): the DTLB is asked with EX's address while MR waits"
 "364#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/lsu_idle \& ~(mr_valid \& mr_mem \& ~mr_tlb_wait)/lsu_idle \& ~(mr_valid \& mr_mem)/#core (T2): the walker waits for the access that waits for it"
-"365#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/if (d_tr_fault != 2'd0) begin/if (1'b0) begin/#core (T2): the fault a walk for MR left behind is not taken"
+"365#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/mr_tr_fault   <= d_tr_fault;/mr_tr_fault   <= 2'd0;/#core (T2): the fault a walk for MR left behind is not taken"
 "366#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)/? (mr_is_load ? EXC_LPAGE : EXC_SPAGE)/#core (T2): an AMO's page fault found in MR is a load page fault"
 "367#CPU_CORE/CORE_CSR/CORE_CSR.sv#s/pmpmask\[wr_addr_idx\] <= wr_data\[53:0\] ^ (wr_data\[53:0\] + 54'd1);/pmpmask[wr_addr_idx] <= wr_data[53:0] ^ (wr_data[53:0] + 54'd2);/#CSR (T4): the NAPOT mask kept for pmpaddr is off by one"
 "368#CPU_CORE/CORE_CSR/CORE_CSR.sv#s/pmpmask\[wr_addr_idx\] <= wr_data\[53:0\] ^ (wr_data\[53:0\] + 54'd1);/pmpmask[wr_addr_idx] <= pmpmask[wr_addr_idx];/#CSR (T4): the NAPOT mask is not written with pmpaddr"
+"369#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/mr_tr_fault   <= (d_tr_req \& d_tr_ready) ? d_tr_fault : 2'd0;/mr_tr_fault   <= 2'd0;/#core (T6): the fault of a translation that hit in the DTLB is lost on the way to MR"
+"370#CPU_CORE/CPU_CORE/CPU_CORE.sv#s/end else if (!mr_exc_r \&\& (mr_tr_fault != 2'd0)) begin/end else if (1'b0) begin/#core (T6): MR does not raise the fault of the translation"
 "338#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%assign hpm_ev\[2\]  = commit;%assign hpm_ev[2]  = commit | trap_en;%#PMU: a trap counted as a retired instruction (t32)"
 "339#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%if (!inhibit_cy \&\& !cy_filt) %if (!inhibit_cy) %#Smcntrpmf: mcyclecfg does not stop mcycle (t32)"
 "340#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%assign ir_filt = (priv_r == PRIV_M) ? ir_minh : (priv_r == PRIV_S) ? ir_sinh : ir_uinh;%assign ir_filt = (priv_r == PRIV_M) ? ir_minh : (priv_r == PRIV_S) ? ir_sinh : 1'b0;%#Smcntrpmf: UINH of minstretcfg ignored (t32)"
@@ -394,7 +399,6 @@ MUTATIONS=(
 "229#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%.rd_addr     (dbg_csr_sel ? dbg_regno_q\[11:0\] : ex_csr_addr)%.rd_addr     (ex_csr_addr)%#debug: a CSR read takes the CSR of the instruction in EX"
 "230#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%(reset_halt_pend | dbg_haltreq | step_issued)%(reset_halt_pend | step_issued)%#debug: haltreq is ignored"
 "231#CPU_CORE/CORE_CSR/CORE_CSR.sv#s%CSR_DCSR      : if (dbg_access) begin%CSR_DCSR      : if (1'b0) begin%#debug: dcsr cannot be written"
-"232#CPU_CORE/CPU_CORE/CPU_CORE.sv#s%            ex_exc_tval = mem_addr;%            ex_exc_tval = ex_exc_tval_pre;%#core: a page fault of a load or a store reports no address in tval"
 "233#CPU_CORE/CORE_BTB/CORE_BTB.sv#s%    assign allow   = upd_valid;%    assign allow   = upd_valid \&\& !spans;%#BTB: a branch across a fetch word gets no tail entry (t24)"
 "234#CPU_CORE/CORE_IFU/CORE_IFU.sv#s%(btb_tail ? (seq_fetch \& (next_start == 2'd0))%(btb_tail ? ((next_start == 2'd0))%#IFU: a tail entry is used in a word that was jumped into (t24)"
 "235#CPU_CORE/CORE_IFU/CORE_IFU.sv#s%assign pred_target = btb_ret ? ras_s\[sp_s - RAS_BITS'(1)\] : btb_target;%assign pred_target = btb_target;%#IFU: returns go where the buffer last saw them go, not to the stack (t24)"

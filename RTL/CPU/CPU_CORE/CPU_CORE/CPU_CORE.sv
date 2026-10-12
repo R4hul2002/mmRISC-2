@@ -416,6 +416,7 @@ module CPU_CORE
     //=================================================================
     logic ex_mem, stall_ma, stall_ex, ex_advance;
     logic mr_tlb_wait;   // MR's access missed in the DTLB in EX (T2)
+    logic [1:0] mr_tr_fault;  // the fault of MR's translation (T6), 0: none
     logic mr_is_mem, stall_mr, mr_advance, lu_hazard;
     logic kill_ex, ctrl_behind_late;          // late branch (see there)
     logic id_ready, id_advance, pipe_busy, serial_busy, wfi_wait, flush;
@@ -424,8 +425,10 @@ module CPU_CORE
     logic sfence_taken, commit, ex_mispredict;
 
     // the exception of the instruction in EX. `ex_exc_pre` is everything
-    // that is known before the address is translated, `ex_exc` has the
-    // fault of the translation on top of it. The PMP comes in MR.
+    // that is known before the address is translated; `ex_exc` is the same
+    // with the interrupt and the address as mtval. The fault of the
+    // translation is taken into a flip-flop (mr_tr_fault) and becomes the
+    // exception in MR, as the PMP does (T6).
     logic        ex_exc_pre, ex_exc, ex_exc_int;
     logic [4:0]  ex_exc_cause_pre, ex_exc_cause;
     logic [63:0] ex_exc_tval_pre, ex_exc_tval;
@@ -1051,19 +1054,12 @@ module CPU_CORE
         ex_exc_int   = ex_exc_int_r;
         ex_exc_cause = ex_exc_cause_pre;
         ex_exc_tval  = ex_exc_tval_pre;
-        // Whatever a load or a store with nothing before it raises here or
-        // in MR -- misaligned, a page fault, an access fault -- reports its
-        // own address, so the value is chosen without asking which: the
-        // answer of the DTLB is not in front of the select (a path of
-        // forwarding, address, DTLB and fault that had no time to spare)
-        if (!ex_exc_r && (ex_is_load || ex_is_store))
-            ex_exc_tval = mem_addr;
-        if (d_tr_req && (d_tr_fault != 2'd0)) begin
-            ex_exc       = 1'b1;
-            ex_exc_cause = (d_tr_fault == 2'd2)
-                         ? (ex_is_store ? EXC_SPAGE  : EXC_LPAGE)
-                         : (ex_is_store ? EXC_SFAULT : EXC_LFAULT);
-        end
+        // The fault of the translation is not added here: it would bring
+        // the DTLB's compare and permissions, behind the forwarding and the
+        // add of the address, into everything ex_exc feeds (the write of
+        // MR's cause, nx_mr_wr; LitexSystem/docs/TIMING.md 41, 42). It goes
+        // to MR in mr_tr_fault, and MR reports it with its own address
+        // (mr_vaddr), as it does a fault of the PMP.
     end
 
     //=================================================================
@@ -1297,6 +1293,13 @@ module CPU_CORE
             mr_exc_cause = mr_exc_int ? {2'b10, 3'd2} : EXC_BREAK;
             mr_exc_tval  = mr_vaddr;
             mr_trig      = mr_dthit;
+        end else if (!mr_exc_r && (mr_tr_fault != 2'd0)) begin
+            // the fault of the translation, found in EX (or after the walk)
+            mr_exc       = 1'b1;
+            mr_exc_cause = (mr_tr_fault == 2'd2)
+                         ? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)
+                         : (mr_is_store ? EXC_SFAULT : EXC_LFAULT);
+            mr_exc_tval  = mr_vaddr;
         end else if (!mr_exc_r && (mr_is_load || mr_is_store) && mr_pmp_fail) begin
             mr_exc       = 1'b1;
             mr_exc_cause = mr_is_store ? EXC_SFAULT : EXC_LFAULT;
@@ -1840,6 +1843,7 @@ module CPU_CORE
             mr_vaddr      <= 64'd0;
             mr_paddr      <= 64'd0;
             mr_tlb_wait   <= 1'b0;
+            mr_tr_fault   <= 2'd0;
             mr_wdata      <= 64'd0;
             mr_size       <= 2'd0;
             mr_signed     <= 1'b0;
@@ -2023,6 +2027,7 @@ module CPU_CORE
                 mr_vaddr      <= mem_addr;
                 mr_paddr      <= d_tr_paddr;
                 mr_tlb_wait   <= d_tr_req & ~d_tr_ready;
+                mr_tr_fault   <= (d_tr_req & d_tr_ready) ? d_tr_fault : 2'd0;
                 mr_size       <= ex_mem_size;
                 mr_signed     <= ex_mem_signed;
                 mr_wdata      <= ex_is_fp_store ? ex_fs2_fwd : ex_b_fwd;
@@ -2052,18 +2057,13 @@ module CPU_CORE
                 mr_fp_we   <= 1'b0;
                 mr_fpu     <= 1'b0;
                 mr_tlb_wait<= 1'b0;
+                mr_tr_fault<= 2'd0;
             end else if (mr_tlb_wait && d_tr_ready) begin
                 // MR's address is in the DTLB now (or the walk left a fault
                 // behind): take it, and go on in the next cycle
                 mr_tlb_wait   <= 1'b0;
                 mr_paddr      <= d_tr_paddr;
-                if (d_tr_fault != 2'd0) begin
-                    mr_exc_r      <= 1'b1;
-                    mr_exc_mem    <= 1'b1;
-                    mr_exc_cause_r<= (d_tr_fault == 2'd2)
-                                   ? (mr_is_store ? EXC_SPAGE  : EXC_LPAGE)
-                                   : (mr_is_store ? EXC_SFAULT : EXC_LFAULT);
-                end
+                mr_tr_fault   <= d_tr_fault;
             end
 
             //---------------------------------------------------------
@@ -2202,6 +2202,7 @@ module CPU_CORE
                 mr_fp_we   <= 1'b0;
                 mr_fpu     <= 1'b0;
                 mr_tlb_wait<= 1'b0;
+                mr_tr_fault<= 2'd0;
                 ma_valid   <= 1'b0;
                 ma_we_rd   <= 1'b0;
                 ma_mem     <= 1'b0;
