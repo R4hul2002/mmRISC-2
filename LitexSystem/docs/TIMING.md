@@ -1049,16 +1049,18 @@ The procedure is in `software/boot/README.md` and `docs/BRINGUP.md`:
    configuration)
 3. `sdcardboot` at `litex>`
 
-## 20. Board: stopped at 16 characters of the banner — interrupts did not come (2026-09-24)
+## 20. Board: stopped after 16 bytes of the banner — interrupts did not come (2026-09-24)
 
 Programming the timing-met version (section 19) printed only `        __` on the terminal. That is the
 **beginning** of the LiteX banner; the CPU had fetched the BIOS from ROM, run C and written to the UART.
 
 ### Cause
 
-- The BIOS's UART is interrupt-driven (`UART_INTERRUPT`). The first 16 characters go straight into the TX
-  FIFO; after that they pile up in a ring buffer that the interrupt handler sends out. Newline + `\e[1m` +
-  `        __` + a space = exactly 16 characters.
+- The BIOS's UART is interrupt-driven (`UART_INTERRUPT`). The first 16 bytes go straight into the 16-entry
+  TX FIFO; after that they pile up in a ring buffer that the interrupt handler sends out. `printf("\n")`
+  sends `\n` and `\r` (LiteX's `litex_putc` adds `\r` after `\n`), then `\e[1m` (bold) and the visible
+  `        __`: 2 + 4 + 10 = exactly 16 bytes, of which the terminal shows 10 characters. (Until 2026-10-13 this
+  section counted the newline as 1 byte and a space after `__`.)
 - Interrupts did not come. **The priority of source 1 of the PLIC stayed 0** (priority 0 means "never
   interrupt").
 - The D$ sent uncached loads / stores to AXI-Lite with **the address rounded to 8 bytes**. The built-in PLIC
@@ -1082,7 +1084,7 @@ Programming the timing-met version (section 19) printed only `        __` on the
 `SIM/SIM_BIOS` was made: CPU_TOP + real caches + the real `bios.bin`, and on the peripheral side ROM / SRAM
 / ctrl / timer0 and LiteX's UART (as `uart.py`: 16-entry FIFO, the TX event a level of "not full", the
 interrupt pending & enable). With the UART at the board's speed (4340 cycles per character), **it stopped at
-the same 16 characters as the board** (`prio[1]=0`, 0 traps). With a fast UART the FIFO does not fill and no
+the same place as the board** (`prio[1]=0`, 0 traps). With a fast UART the FIFO does not fill and no
 interrupt is needed, so at first it did not reproduce.
 
 The fix is 2 lines of the D$: send uncached addresses **at byte granularity** (`DCACHE.sv`,

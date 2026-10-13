@@ -38,12 +38,13 @@ pass.
 
 ## Where the board first stopped (2026-09-24)
 
-With the first bitstream, the terminal showed only `        __` (the first 16 characters of the banner)
-and stopped. **The CPU was running**: it fetched the BIOS from ROM, ran C and wrote to the UART. What
+With the first bitstream, the terminal showed only `        __` (the beginning of the banner: the first 16 bytes
+the BIOS sent, 10 of them visible) and stopped. **The CPU was running**: it fetched the BIOS from ROM, ran C and wrote to the UART. What
 stopped was interrupts:
 
-- The BIOS's UART is interrupt-driven. The first 16 characters go straight into the UART's TX FIFO; after
-  that they pile up in a ring buffer that the interrupt handler sends out.
+- The BIOS's UART is interrupt-driven. The first 16 bytes go straight into the UART's 16-entry TX FIFO;
+  after that they pile up in a ring buffer that the interrupt handler sends out. The 16 bytes are the
+  newline (`\n` and the `\r` LiteX adds after it), `\e[1m` (bold) and the 10 visible characters `        __`.
 - No interrupt ever came. The priority of source 1 of the PLIC stayed 0.
 - The cause was that uncached accesses of the D$ **rounded the AXI-Lite address to 8 bytes**. The
   built-in PLIC decides which half of a 32-bit register is meant by bit 2 of the address, so a write to
@@ -53,7 +54,7 @@ stopped was interrupts:
 SIM_CORE's memory model passed byte addresses, so it did not show, and SIM_SYS / SIM_CPU tied the
 external interrupt to 0. **The real BIOS had never been run with interrupts**. `SIM/SIM_BIOS` puts the
 real `bios.bin` on CPU_TOP and models LiteX's UART (16-entry FIFO, level events) to fill that gap. It
-was confirmed that the RTL before the fix stopped at the same 16 characters, and then it was fixed.
+was confirmed that the RTL before the fix stopped at the same place (the same 16 bytes), and then it was fixed.
 
 ## Round 2: stopped at `Booting from boot.json...` (2026-09-24)
 
