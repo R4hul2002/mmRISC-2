@@ -60,3 +60,58 @@
 # set_property CFGBVS VCCO [current_design]
 # set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]
 # set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]
+set_property CFGBVS VCCO [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
+
+set_property -dict { PACKAGE_PIN T4    IOSTANDARD DIFF_SSTL15 } [get_ports { diff_clock_rtl_0_clk_n }]
+set_property -dict { PACKAGE_PIN R4    IOSTANDARD DIFF_SSTL15 } [get_ports { diff_clock_rtl_0_clk_p }] 
+
+set_property -dict { PACKAGE_PIN T6   IOSTANDARD LVCMOS15 } [get_ports { resetn }] 
+
+
+
+set_property -dict { PACKAGE_PIN D16   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rstn_0 }] 
+
+set_property -dict { PACKAGE_PIN B17   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rx_clk_0 }] 
+create_clock -period 40 [get_ports eth_mii_rx_clk_0]
+set_property -dict { PACKAGE_PIN A15   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rx_dv_0 }]
+set_property -dict { PACKAGE_PIN A16   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_0[0] }] 
+set_property -dict { PACKAGE_PIN B18   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_0[1] }]
+set_property -dict { PACKAGE_PIN C18   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_0[2] }] 
+set_property -dict { PACKAGE_PIN C19   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_0[3] }] 
+
+set_property -dict { PACKAGE_PIN E18   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_tx_clk_0 }] 
+# create_clock -period 40 [get_ports eth_mii_tx_clk_0]
+# set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets eth_mii_tx_clk_0_IBUF]
+set_property -dict { PACKAGE_PIN F18   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_tx_en_0 }] 
+set_property -dict { PACKAGE_PIN C20   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_0[0] }]
+set_property -dict { PACKAGE_PIN D20   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_0[1] }]
+set_property -dict { PACKAGE_PIN A19   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_0[2] }] 
+set_property -dict { PACKAGE_PIN A18   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_0[3] }]
+
+set_property -dict { PACKAGE_PIN B16   IOSTANDARD LVCMOS33 } [get_ports { eth_mdc_0 }]
+set_property -dict { PACKAGE_PIN B15   IOSTANDARD LVCMOS33 } [get_ports { eth_mdio_io_0}]
+
+
+set_property -dict { PACKAGE_PIN B22   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rstn_1 }] 
+
+set_property -dict { PACKAGE_PIN E19   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rx_clk_1 }] 
+create_clock -period 40 [get_ports eth_mii_rx_clk_1]
+set_property -dict { PACKAGE_PIN F19   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rx_dv_1 }]
+set_property -dict { PACKAGE_PIN A20   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_1[0] }] 
+set_property -dict { PACKAGE_PIN B20   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_1[1] }]
+set_property -dict { PACKAGE_PIN D19   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_1[2] }] 
+set_property -dict { PACKAGE_PIN C17   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_rxd_1[3] }] 
+
+set_property -dict { PACKAGE_PIN A14   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_tx_clk_1 }] 
+# create_clock -period 40 [get_ports eth_mii_tx_clk_1]
+# set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets eth_mii_tx_clk_1_IBUF]
+set_property -dict { PACKAGE_PIN D17   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_tx_en_1 }] 
+set_property -dict { PACKAGE_PIN E17   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_1[0] }]
+set_property -dict { PACKAGE_PIN C14   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_1[1] }]
+set_property -dict { PACKAGE_PIN C15   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_1[2] }] 
+set_property -dict { PACKAGE_PIN A13   IOSTANDARD LVCMOS33 } [get_ports { eth_mii_txd_1[3] }]
+
+set_property -dict { PACKAGE_PIN F20   IOSTANDARD LVCMOS33 } [get_ports { eth_mdc_1 }]
+set_property -dict { PACKAGE_PIN C22   IOSTANDARD LVCMOS33 } [get_ports { eth_mdio_io_1}]
+
