@@ -38,7 +38,8 @@ module TOP
         parameter int          L2_SIZE      = 0
     )
     (
-        input  logic       CLK100MHZ,     // E3
+        input logic        CLK_P,
+        input logic        CLK_N,
         input  logic       CPU_RESETN,    // C2 (RESET button, active low)
         input  logic       SW2,           // C10 : authentication enable
         input  logic       SW3,           // A10 : cJTAG enable
@@ -57,24 +58,33 @@ module TOP
     //=================================================================
     logic sys_clk;
     logic locked;
+  wire CLK200MHZ;
 
-    generate
+generate
         if (SIM != 0) begin : g_clk_sim
-            assign sys_clk = CLK100MHZ;
+            assign sys_clk = CLK200MHZ;
             assign locked  = 1'b1;
         end else begin : g_clk_mmcm
-            logic clk_fb, clk_out;
+        logic clk_ibufg, clk_fb, clk_out;
+        assign CLK200MHZ = clk_ibufg;
+            IBUFGDS
+            clk_200mhz_ibufgds_inst(
+                .I(CLK_P),
+                .IB(CLK_N),
+                .O(clk_ibufg)
+            );
+
             // VCO = 100MHz * 10 = 1000MHz
             MMCME2_BASE
                 #(
-                    .CLKIN1_PERIOD    (10.0),
+                    .CLKIN1_PERIOD    (5.0),
                     .DIVCLK_DIVIDE    (1),
-                    .CLKFBOUT_MULT_F  (10.0),
+                    .CLKFBOUT_MULT_F  (5.0),
                     .CLKOUT0_DIVIDE_F (1000.0 / SYS_CLK_MHZ)
                 )
             u_mmcm
                 (
-                    .CLKIN1   (CLK100MHZ),
+                    .CLKIN1   (CLK200MHZ),
                     .CLKFBIN  (clk_fb),
                     .CLKFBOUT (clk_fb),
                     .CLKFBOUTB(),
